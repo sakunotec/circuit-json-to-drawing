@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "lib/*": ["./lib/*"],
+      "tests/*": ["./tests/*"]
+    }
+  },
+  "include": ["lib/**/*.ts", "tests/**/*.ts", "examples/**/*.ts"]
+}
