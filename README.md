@@ -18,7 +18,8 @@ The native SVG rasterizer is used only by the visual test matcher.
 
 The dependencies currently pin preview builds of the proposed Circuit JSON
 schemas and PoppyGL outline renderer. Replace these pins with released versions
-once the corresponding PRs merge.
+once the corresponding PRs merge. The PoppyGL preview also includes the runtime
+packaging fix in https://github.com/tscircuit/poppygl/pull/54.
 
 ## Render a sheet
 

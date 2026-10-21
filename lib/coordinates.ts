@@ -21,7 +21,9 @@ const directions: Record<
   isometric: [1, 1, 1],
 }
 export function getViewOrientation(direction: DrawingViewDirection) {
-  const vector = cadToGltf(directions[direction])
+  const cadDirection = directions[direction]
+  if (!cadDirection) throw new Error(`Unknown drawing direction: ${direction}`)
+  const vector = cadToGltf(cadDirection)
   const up: CameraUp = direction.startsWith("z_") ? "z-" : "y+"
   return { vector, up }
 }
