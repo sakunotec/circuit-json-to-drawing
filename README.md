@@ -12,7 +12,7 @@ hidden edges and hatched section cuts.
 URLs, embedded images, or generated output elements.
 
 ```ts
-import { convertCircuitJsonToDrawingSvg } from "circuit-json-to-drawing"
+import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing"
 
 const circuitJson = [
   {
@@ -66,7 +66,7 @@ selectors must be resolved to source IDs by core; core emission is follow-up wor
 ## Multiple pages
 
 ```ts
-import { convertCircuitJsonToDrawingPages } from "circuit-json-to-drawing"
+import { convertCircuitJsonToDrawingPages } from "@tscircuit/circuit-json-to-drawing"
 
 const pages = await convertCircuitJsonToDrawingPages(circuitJson, { resolveScene })
 for (const page of pages) {
@@ -158,3 +158,19 @@ A `drawing_page` retains resolved numeric `width`/`height` and optional `page_si
 A separate optional `drawing_page_title_block` references `drawing_page_id` and has its own `drawing_page_title_block_id`. It requires `title`; optional fields are `legal_owner`, `identification_number`, `revision_index`, `date_of_issue`, `creator`, `approval_person`, `sheet_number`, and `number_of_sheets`. No images or generated assets are stored in it. Dates are caller-authored strings. Sheet numbers/counts are positive integers; a supplied number cannot exceed its total.
 
 The converter renders at most one explicit title block per page, 180 × 40 mm, inset 5 mm from the bottom-right edge. It validates duplicate IDs, dangling page references and a minimum page size of 190 × 50 mm before resolving geometry. No title block is invented when the element is absent. Position part views above this reserved region to avoid overlap. The layout is a renderer convention, not a standard-mandated template; per-view scales remain in view captions.
+
+## Install from jscdn
+
+```sh
+bun add -D https://jscdn.tscircuit.com/@tscircuit/circuit-json-to-drawing/0.0.2.tgz
+```
+
+```ts
+import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing"
+```
+
+Releases publish the source-only package to GitHub Packages; jscdn serves the
+versioned tarballs without requiring consumer credentials. The release workflow
+runs tests and typechecking before publishing, and serializes releases to avoid
+version collisions. Versions are bumped explicitly in package.json; the workflow
+does not write repository contents or create version commits. No build or native runtime dependency is required.

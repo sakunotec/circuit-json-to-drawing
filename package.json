@@ -1,6 +1,6 @@
 {
-  "name": "circuit-json-to-drawing",
-  "version": "0.0.1",
+  "name": "@tscircuit/circuit-json-to-drawing",
+  "version": "0.0.2",
   "type": "module",
   "module": "lib/index.ts",
   "files": [
@@ -19,8 +19,9 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "poppygl": "https://pkg.pr.new/tscircuit/poppygl@3d22dfe",
-    "circuit-json": "https://pkg.pr.new/tscircuit/circuit-json@784a9ec"
+    "poppygl": "^0.0.37",
+    "circuit-json": "^0.0.532",
+    "@tscircuit/alphabet": "0.0.25"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
@@ -29,5 +30,13 @@
     "bun-match-svg": "^0.0.17",
     "@jscad/modeling": "2.13.0",
     "fast-png": "^8.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "types": "lib/index.ts",
+  "exports": {
+    ".": "./lib/index.ts"
   }
 }
+
