@@ -33,6 +33,10 @@
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
+  },
+  "types": "lib/index.ts",
+  "exports": {
+    ".": "./lib/index.ts"
   }
 }
 
