@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "poppygl": "https://pkg.pr.new/tscircuit/poppygl@3d22dfe",
-    "circuit-json": "https://pkg.pr.new/tscircuit/circuit-json@b6c93cd"
+    "circuit-json": "https://pkg.pr.new/tscircuit/circuit-json@7ceec2c"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.4",

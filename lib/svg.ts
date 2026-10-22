@@ -1,4 +1,4 @@
-import type { Drawing, DrawingView } from "circuit-json"
+import type { DrawingPage, DrawingPartView } from "circuit-json"
 
 export function escapeXml(text: string) {
   return text
@@ -16,17 +16,19 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-export function sheetToSvg(
-  sheet: Drawing,
-  views: { view: DrawingView; pngUrl: string }[],
+export function pageToSvg(
+  page: DrawingPage,
+  views: { view: DrawingPartView; pngUrl: string }[],
 ) {
-  const title = escapeXml(sheet.display_name ?? sheet.name ?? sheet.drawing_id)
+  const title = escapeXml(
+    page.display_name ?? page.name ?? page.drawing_page_id,
+  )
   const images = views
     .map(({ view, pngUrl }, index) => {
-      const x = sheet.width / 2 + view.center.x - view.width / 2
-      const y = sheet.height / 2 - view.center.y - view.height / 2
+      const x = page.width / 2 + view.center.x - view.width / 2
+      const y = page.height / 2 - view.center.y - view.height / 2
       const name = escapeXml(
-        view.display_name ?? view.name ?? view.drawing_view_id,
+        view.display_name ?? view.name ?? view.drawing_part_view_id,
       )
       const scale =
         view.scale == null
@@ -34,8 +36,8 @@ export function sheetToSvg(
           : view.scale < 1
             ? `1:${Number((1 / view.scale).toPrecision(6))}`
             : `${view.scale}:1`
-      return `<g data-drawing-view-id="${escapeXml(view.drawing_view_id)}"><title>${name}</title><clipPath id="viewport-${index}"><rect x="${x}" y="${y}" width="${view.width}" height="${view.height}"/></clipPath><image x="${x}" y="${y}" width="${view.width}" height="${view.height}" preserveAspectRatio="none" clip-path="url(#viewport-${index})" href="${pngUrl}"/><text x="${x + view.width / 2}" y="${y + view.height + 3.5}" text-anchor="middle" font-size="2.8">${name} · ${scale}</text></g>`
+      return `<g data-drawing-part-view-id="${escapeXml(view.drawing_part_view_id)}"><title>${name}</title><clipPath id="viewport-${index}"><rect x="${x}" y="${y}" width="${view.width}" height="${view.height}"/></clipPath><image x="${x}" y="${y}" width="${view.width}" height="${view.height}" preserveAspectRatio="none" clip-path="url(#viewport-${index})" href="${pngUrl}"/><text x="${x + view.width / 2}" y="${y + view.height + 3.5}" text-anchor="middle" font-size="2.8">${name} · ${scale}</text></g>`
     })
     .join("")
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${sheet.width}mm" height="${sheet.height}mm" viewBox="0 0 ${sheet.width} ${sheet.height}" role="img" aria-label="${title}" style="font-family:monospace"><title>${title}</title><rect width="100%" height="100%" fill="white"/>${images}<rect x="2" y="2" width="${Math.max(0, sheet.width - 4)}" height="${Math.max(0, sheet.height - 4)}" fill="none" stroke="black" stroke-width="0.25"/><path d="M2 ${sheet.height - 12} H${sheet.width - 2}" stroke="black" stroke-width="0.25"/><text x="5" y="${sheet.height - 6}" font-size="3.5">${title}</text><text x="${sheet.width - 5}" y="${sheet.height - 6}" text-anchor="end" font-size="2.5">mm · ORTHOGRAPHIC</text></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}mm" height="${page.height}mm" viewBox="0 0 ${page.width} ${page.height}" role="img" aria-label="${title}" style="font-family:monospace"><title>${title}</title><rect width="100%" height="100%" fill="white"/>${images}<rect x="2" y="2" width="${Math.max(0, page.width - 4)}" height="${Math.max(0, page.height - 4)}" fill="none" stroke="black" stroke-width="0.25"/><path d="M2 ${page.height - 12} H${page.width - 2}" stroke="black" stroke-width="0.25"/><text x="5" y="${page.height - 6}" font-size="3.5">${title}</text><text x="${page.width - 5}" y="${page.height - 6}" text-anchor="end" font-size="2.5">mm · ORTHOGRAPHIC</text></svg>`
 }

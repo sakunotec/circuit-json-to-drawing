@@ -1,4 +1,7 @@
-import type { DrawingSectionPlane, DrawingViewDirection } from "circuit-json"
+import type {
+  DrawingSectionPlane,
+  DrawingPartViewDirection,
+} from "circuit-json"
 import type { CameraUp, OutlineSection } from "poppygl"
 
 /** Rigid CAD (+Z-up) -> glTF (+Y-up) rotation. Both spaces use mm. */
@@ -9,7 +12,7 @@ export function cadToGltf(
 }
 
 const directions: Record<
-  DrawingViewDirection,
+  DrawingPartViewDirection,
   readonly [number, number, number]
 > = {
   x_positive: [1, 0, 0],
@@ -20,7 +23,7 @@ const directions: Record<
   z_negative: [0, 0, -1],
   isometric: [1, 1, 1],
 }
-export function getViewOrientation(direction: DrawingViewDirection) {
+export function getViewOrientation(direction: DrawingPartViewDirection) {
   const cadDirection = directions[direction]
   if (!cadDirection) throw new Error(`Unknown drawing direction: ${direction}`)
   const vector = cadToGltf(cadDirection)

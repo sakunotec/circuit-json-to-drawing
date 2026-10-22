@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test"
 import "bun-match-svg"
-import { decode } from "fast-png"
-import { convertCircuitJsonToDrawingArtifacts } from "../lib"
+import { viewImages } from "./fixtures/svg-views"
+import { convertCircuitJsonToDrawingPages } from "../lib"
 import { cadScene } from "./fixtures/models"
 import { view } from "./fixtures/drawings"
 
 test("physical scale changes projected size and clips rather than refits oversized geometry", async () => {
-  const artifacts = await convertCircuitJsonToDrawingArtifacts(
+  const pages = await convertCircuitJsonToDrawingPages(
     [
       {
-        type: "drawing",
-        drawing_id: "drawing_1",
+        type: "drawing_page",
+        drawing_page_id: "drawing_1",
         name: "20 mm CUBE · PHYSICAL SCALE",
         width: 210,
         height: 110,
@@ -26,9 +26,7 @@ test("physical scale changes projected size and clips rather than refits oversiz
     ],
     { resolveScene: () => cadScene() },
   )
-  const pngs = artifacts
-    .filter((a) => a.element.format === "png")
-    .map((a) => decode(a.content as Uint8Array))
+  const pngs = viewImages(pages[0]!.svg)
   const span = (image: (typeof pngs)[number]) => {
     let min = Infinity,
       max = -Infinity
@@ -43,10 +41,6 @@ test("physical scale changes projected size and clips rather than refits oversiz
   expect(span(pngs[0]!)).toBeCloseTo(40, 0)
   expect(span(pngs[1]!)).toBeCloseTo(80, 0)
   expect(span(pngs[2]!)).toBe(-Infinity)
-  expect(artifacts.find((a) => a.element.format === "svg")!.content).toContain(
-    'width="210mm" height="110mm"',
-  )
-  await expect(
-    artifacts.find((a) => a.element.format === "svg")!.content as string,
-  ).toMatchSvgSnapshot(import.meta.path)
+  expect(pages[0]!.svg).toContain('width="210mm" height="110mm"')
+  await expect(pages[0]!.svg).toMatchSvgSnapshot(import.meta.path)
 })

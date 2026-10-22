@@ -1,37 +1,33 @@
-import type { Drawing, DrawingArtifact, DrawingView } from "circuit-json"
-import type { FetchLike, GLTFScene } from "poppygl"
+import type { DrawingPage, DrawingPartView } from "circuit-json"
+import type { GLTFScene } from "poppygl"
 
 export interface CircuitElementLike {
   type: string
   [key: string]: unknown
 }
 export type DrawingDocument = readonly (
-  | Drawing
-  | DrawingView
-  | DrawingArtifact
+  | DrawingPage
+  | DrawingPartView
   | CircuitElementLike
 )[]
 
 export interface DrawingOptions {
-  /** Select a single sheet; omit to generate every drawing in document order. */
-  drawingId?: string
+  /** Select one configured page; omit to render all pages in document order. */
+  drawingPageId?: string
   pixelsPerMm?: number
   supersampling?: number
-  /** Limit supersampled pixels per viewport. Defaults to 16 million. */
   maxRasterPixels?: number
-  fetchImpl?: FetchLike
-  /** Resolve exactly the selected geometry, already in glTF +Y-up mm coordinates.
-   * Receives the drawing's source IDs and full input document. Called once per sheet.
-   * Omit when drawing.model_glb_url supplies a pre-exported scene.
+  /** Resolve the geometry selected by this part view, in glTF +Y-up mm.
+   * Geometry loading/caching is owned by the caller, outside Circuit JSON drawing configuration.
    */
   resolveScene?: (
-    drawing: Drawing,
+    partView: DrawingPartView,
     circuitJson: DrawingDocument,
   ) => GLTFScene | Promise<GLTFScene>
 }
 
-export interface DrawingOutputArtifact {
-  element: DrawingArtifact
-  /** SVG text for a sheet; PNG bytes for a single view. */
-  content: string | Uint8Array
+/** Exporter output, never a Circuit JSON element. */
+export interface DrawingPageOutput {
+  drawingPageId: string
+  svg: string
 }

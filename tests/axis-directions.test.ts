@@ -7,10 +7,10 @@ import {
 } from "../lib"
 import { asymmetricScene } from "./fixtures/models"
 import { view } from "./fixtures/drawings"
-import type { DrawingViewDirection } from "circuit-json"
+import type { DrawingPartViewDirection } from "circuit-json"
 
 test("six orthographic CAD directions preserve handedness and paper-up conventions", async () => {
-  const directions: DrawingViewDirection[] = [
+  const directions: DrawingPartViewDirection[] = [
     "x_positive",
     "x_negative",
     "y_positive",
@@ -42,8 +42,8 @@ test("six orthographic CAD directions preserve handedness and paper-up conventio
   const svg = await convertCircuitJsonToDrawingSvg(
     [
       {
-        type: "drawing",
-        drawing_id: "drawing_1",
+        type: "drawing_page",
+        drawing_page_id: "drawing_1",
         name: "AXIS VIEWS · CAD +Z UP",
         width: 240,
         height: 180,

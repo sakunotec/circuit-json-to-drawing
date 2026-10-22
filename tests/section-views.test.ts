@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import "bun-match-svg"
 import { createOutlineSection } from "poppygl"
 import { convertCircuitJsonToDrawingSvg, sectionToGltf } from "../lib"
-import { sheet, view } from "./fixtures/drawings"
+import { page, view } from "./fixtures/drawings"
 import { hollowTubeScene } from "./fixtures/models"
 
 test("off-origin CAD Y sections flip glTF offsets and retained sides and hatch the cavity walls", async () => {
@@ -36,7 +36,7 @@ test("off-origin CAD Y sections flip glTF offsets and retained sides and hatch t
   expect(area).toBeCloseTo(240, 3)
   const svg = await convertCircuitJsonToDrawingSvg(
     [
-      sheet(),
+      page(),
       {
         ...view("section_a", "drawing_1", "y_positive"),
         center: { x: -48, y: 5 },
