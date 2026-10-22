@@ -3,7 +3,7 @@ import "bun-match-svg"
 import { convertCircuitJsonToDrawingSvg } from "../lib"
 import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 
-test("modelprinter view presets produce a dimensioned rectangular stock tube sheet", async () => {
+test("native JSCAD view presets produce a dimensioned rectangular stock tube sheet", async () => {
   const fixture = rectangularTubeDrawing()
   const original = JSON.stringify(fixture.input)
   const svg = await convertCircuitJsonToDrawingSvg(fixture.input, {
@@ -21,7 +21,9 @@ test("modelprinter view presets produce a dimensioned rectangular stock tube she
   )
   expect(svg).toContain("40.0</text>")
   expect(
-    fixture.dimensions.every((dimension) => !dimension.cad_named_edge_id),
+    fixture.dimensions.every(
+      (dimension) => !dimension.cad_component_id && !dimension.edge_name,
+    ),
   ).toBe(true)
   expect(JSON.stringify(fixture.input)).toBe(original)
   const resized = rectangularTubeDrawing(60, 30, 4, 100)
@@ -33,8 +35,6 @@ test("modelprinter view presets produce a dimensioned rectangular stock tube she
   measured(resizedSvg).forEach((value, index) =>
     expect(value).toBeCloseTo([60, 30, 100][index]!, 3),
   )
-  expect(resized.metadata.namedEdges.map((edge) => edge.name)).toEqual(
-    fixture.metadata.namedEdges.map((edge) => edge.name),
-  )
+  expect(resized.edgeNames).toEqual(fixture.edgeNames)
   await expect(svg).toMatchSvgSnapshot(import.meta.path)
 })

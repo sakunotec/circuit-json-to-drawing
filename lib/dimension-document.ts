@@ -1,7 +1,5 @@
 import {
-  cad_named_edge,
   drawing_dimension,
-  type CadNamedEdge,
   type CadComponent,
   type DrawingDimension,
   type DrawingPartView,
@@ -9,14 +7,14 @@ import {
 } from "circuit-json"
 import type { DrawingDocument } from "./types"
 
-/** Parse analytic reference segments once, before scene loading. They are authored
- * model-defined edges in CAD world space, not mesh indices or a B-rep edge registry.
+/** Validate dimension intent and owning CAD selections before scene loading.
+ * Native model readers own edge names, geometry and topology; Circuit JSON
+ * contains only the model association and an opaque feature name.
  */
 export function parseDrawingDimensions(
   input: DrawingDocument,
   views: DrawingPartView[],
 ) {
-  const edges = new Map<CadNamedEdge["cad_named_edge_id"], CadNamedEdge>()
   const dimensions: DrawingDimension[] = []
   const dimensionIds = new Set<DrawingDimension["drawing_dimension_id"]>()
   const cadComponents = new Map<
@@ -31,27 +29,10 @@ export function parseDrawingDimensions(
     CadComponent["source_component_id"],
     SourceGroup["source_group_id"]
   >()
-  const edgeNames = new Set<string>()
-  if (
-    !input.some(
-      (record) =>
-        record.type === "drawing_dimension" || record.type === "cad_named_edge",
-    )
-  )
-    return { edges, dimensions }
+  if (!input.some((record) => record.type === "drawing_dimension"))
+    return dimensions
   for (const record of input) {
-    if (record.type === "cad_named_edge") {
-      const edge = cad_named_edge.parse(record)
-      if (edges.has(edge.cad_named_edge_id))
-        throw new Error(`Duplicate named edge "${edge.name}"`)
-      const key = JSON.stringify([edge.cad_component_id, edge.name])
-      if (edgeNames.has(key))
-        throw new Error(
-          `Named edge "${edge.name}" is ambiguous within its CAD part`,
-        )
-      edgeNames.add(key)
-      edges.set(edge.cad_named_edge_id, edge)
-    } else if (record.type === "drawing_dimension") {
+    if (record.type === "drawing_dimension") {
       const dimension = drawing_dimension.parse(record)
       if (dimensionIds.has(dimension.drawing_dimension_id))
         throw new Error("Duplicate drawing dimension")
@@ -88,9 +69,6 @@ export function parseDrawingDimensions(
       componentGroups.set(record.source_component_id, record.source_group_id)
     }
   }
-  for (const edge of edges.values())
-    if (!cadComponents.has(edge.cad_component_id))
-      throw new Error(`Named edge "${edge.name}" references a missing CAD part`)
   for (const dimension of dimensions) {
     const view = views.find(
       (view) => view.drawing_part_view_id === dimension.drawing_part_view_id,
@@ -98,20 +76,15 @@ export function parseDrawingDimensions(
     if (!view)
       throw new Error("Drawing dimension references a missing part view")
     if (dimension.measurement !== "edge") continue
-    const edge = edges.get(dimension.cad_named_edge_id!)
-    if (!edge)
-      throw new Error(
-        `Dimension in view "${view.name ?? "unnamed view"}" references a missing named edge`,
-      )
-    const sourceId = cadComponents.get(
-      edge.cad_component_id,
-    )!.source_component_id
+    const owner = cadComponents.get(dimension.cad_component_id!)
+    if (!owner) throw new Error(`Dimension references a missing CAD component`)
+    const sourceId = owner.source_component_id
     if (
       view.source_component_ids &&
       !view.source_component_ids.includes(sourceId)
     )
       throw new Error(
-        `Named edge "${edge.name}" does not belong to the geometry selected by view "${view.name ?? "unnamed view"}"`,
+        `Named edge "${dimension.edge_name}" does not belong to the geometry selected by view "${view.name ?? "unnamed view"}"`,
       )
     if (view.source_group_id) {
       let group = componentGroups.get(sourceId)
@@ -122,9 +95,9 @@ export function parseDrawingDimensions(
       }
       if (group !== view.source_group_id)
         throw new Error(
-          `Named edge "${edge.name}" does not belong to the group selected by view "${view.name ?? "unnamed view"}"`,
+          `Named edge "${dimension.edge_name}" does not belong to the group selected by view "${view.name ?? "unnamed view"}"`,
         )
     }
   }
-  return { edges, dimensions }
+  return dimensions
 }

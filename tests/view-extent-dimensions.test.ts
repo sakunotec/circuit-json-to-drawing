@@ -6,13 +6,19 @@ import { mat4 } from "gl-matrix"
 import { renderDrawCalls } from "poppygl"
 import { inferViewDimensionReference } from "../lib/view-dimension-reference"
 import { measureDrawingEdge, renderDrawingDimension } from "../lib/dimensions"
+import { referenceForModelEdge } from "../lib/model-edge-reference"
 import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 
 test("model-defined straight edges and inferred view extents remain distinct on rounded and sectioned geometry", async () => {
   const fixture = rectangularTubeDrawing(40, 20, 3, 80, 3)
-  const edge = fixture.edges.find((edge) => edge.name === "outer_top")!
-  expect(edge.start).toEqual({ x: -17, y: 10, z: 0 })
-  expect(edge.end).toEqual({ x: 17, y: 10, z: 0 })
+  const edge = fixture.readEdge("outer_top")
+  const topPoints = [...edge.points].sort((a, b) => a.x - b.x)
+  expect(topPoints[0]!.x).toBeCloseTo(-17, 5)
+  expect(topPoints.at(-1)!.x).toBeCloseTo(17, 5)
+  expect(edge.closed).toBe(false)
+  const profile = fixture.readEdge("outer_profile")
+  expect(profile.closed).toBe(true)
+  expect(profile.points.length).toBeGreaterThan(8)
   const input = [
     ...fixture.input,
     {
@@ -20,10 +26,22 @@ test("model-defined straight edges and inferred view extents remain distinct on 
       drawing_dimension_id: "actual_top_edge",
       drawing_part_view_id: "end",
       measurement: "edge" as const,
-      cad_named_edge_id: edge.cad_named_edge_id,
+      cad_component_id: fixture.cad.cad_component_id,
+      edge_name: "outer_top",
       name: "Model-defined outer_top",
       orientation: "horizontal" as const,
       offset: 23,
+    },
+    {
+      type: "drawing_dimension" as const,
+      drawing_dimension_id: "native_closed_profile",
+      drawing_part_view_id: "end",
+      measurement: "edge" as const,
+      cad_component_id: fixture.cad.cad_component_id,
+      edge_name: "outer_profile",
+      name: "Native JSCAD rounded contour",
+      orientation: "horizontal" as const,
+      offset: -10,
     },
   ]
   const original = JSON.stringify(input)
@@ -32,6 +50,7 @@ test("model-defined straight edges and inferred view extents remain distinct on 
       pixelsPerMm: 2,
       supersampling: 2,
       resolveScene: () => fixture.scene,
+      resolveModelEdge: fixture.resolveModelEdge,
     })
   const measured = (drawing: string, id: string) =>
     Number(
@@ -42,20 +61,30 @@ test("model-defined straight edges and inferred view extents remain distinct on 
       )?.[1],
     )
   const svg = await render()
-  expect(svg).toContain(
-    'data-drawing-dimension-id="actual_top_edge" data-measured-value="34"',
-  )
+  expect(measured(svg, "actual_top_edge")).toBeCloseTo(34, 3)
   expect(measured(svg, "end_view_width")).toBeCloseTo(40, 3)
+  expect(measured(svg, "native_closed_profile")).toBeCloseTo(40, 3)
   expect(svg).toContain("34.0</text>")
   expect(svg).toContain("40.0</text>")
   expect(
-    fixture.dimensions.every((dimension) => !dimension.cad_named_edge_id),
+    fixture.dimensions.every(
+      (dimension) => !dimension.cad_component_id && !dimension.edge_name,
+    ),
   ).toBe(true)
-  expect(fixture.edges.map((edge) => edge.name)).toEqual([
-    "outer_top",
+  expect([...fixture.edgeNames].sort()).toEqual([
+    "inner_profile",
     "outer_left",
-    "outer_right_longitudinal",
+    "outer_profile",
+    "outer_top",
   ])
+  const curvedAligned = input.map((record) =>
+    record.type === "drawing_dimension" &&
+    "drawing_dimension_id" in record &&
+    record.drawing_dimension_id === "native_closed_profile"
+      ? { ...record, orientation: "aligned" as const }
+      : record,
+  )
+  await expect(render(curvedAligned)).rejects.toThrow("straight")
   const sectioned = input.map((record) =>
     record.type === "drawing_part_view" &&
     "drawing_part_view_id" in record &&
@@ -77,9 +106,7 @@ test("model-defined straight edges and inferred view extents remain distinct on 
   )
   const scaledSvg = await render(scaled)
   expect(measured(scaledSvg, "end_view_width")).toBeCloseTo(40, 3)
-  expect(scaledSvg).toContain(
-    'data-drawing-dimension-id="actual_top_edge" data-measured-value="34"',
-  )
+  expect(measured(scaledSvg, "actual_top_edge")).toBeCloseTo(34, 3)
   const emptySection = input.map((record) =>
     record.type === "drawing_part_view"
       ? {
@@ -177,6 +204,60 @@ test("model-defined straight edges and inferred view extents remain distinct on 
       expect(positive.start.x).toBeLessThan(negative.start.x)
     }
   }
+  // Extrema along the measurement axis are not enough to place a curve's line:
+  // its furthest perpendicular samples must clear the annotation as well.
+  const curvedEdge = {
+    points: [
+      { x: -20, y: 0, z: 0 },
+      { x: 0, y: 40, z: 0 },
+      { x: 20, y: 0, z: 0 },
+      { x: 0, y: -40, z: 0 },
+    ],
+    closed: true,
+  }
+  for (const orientation of ["horizontal", "vertical"] as const) {
+    for (const offset of [8, -8]) {
+      const dimension = drawing_dimension.parse({
+        type: "drawing_dimension",
+        drawing_dimension_id: "curve_clearance",
+        drawing_part_view_id: "end",
+        measurement: "edge",
+        cad_component_id: fixture.cad.cad_component_id,
+        edge_name: "curve",
+        orientation,
+        offset,
+      })
+      const annotation = renderDrawingDimension(
+        dimension,
+        referenceForModelEdge(curvedEdge, dimension, frontCamera),
+        view,
+        fixture.page,
+        frontCamera,
+      )
+      if (orientation === "horizontal")
+        expect(annotation.dimensionStart.y).toBeCloseTo(
+          offset > 0 ? 58 : -58,
+          5,
+        )
+      else
+        expect(annotation.dimensionStart.x).toBeCloseTo(
+          offset > 0 ? -33 : 33,
+          5,
+        )
+    }
+  }
   expect(JSON.stringify(input)).toBe(original)
-  await expect(svg).toMatchSvgSnapshot(import.meta.path)
+  // Keep the manufacturing sheet free of a redundant overall-width callout;
+  // the separate render above verifies the native contour's full projected span.
+  const sheet = await render(
+    input.filter(
+      (record) =>
+        !(
+          record.type === "drawing_dimension" &&
+          "drawing_dimension_id" in record &&
+          record.drawing_dimension_id === "native_closed_profile"
+        ),
+    ),
+  )
+  await expect(sheet).toMatchSvgSnapshot(import.meta.path)
 })

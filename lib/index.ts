@@ -4,6 +4,7 @@ import {
   encodePNG,
   createOutlineSection,
 } from "poppygl"
+import { referenceForModelEdge } from "./model-edge-reference"
 import { inferViewDimensionReference } from "./view-dimension-reference"
 import { renderDrawingDimension } from "./dimensions"
 import { parseDrawingDocument } from "./document"
@@ -20,6 +21,8 @@ export type {
   DrawingOptions,
   DrawingPageOutput,
   CircuitElementLike,
+  DrawingPoint,
+  ResolvedModelEdge,
 } from "./types"
 export { cadToGltf, sectionToGltf, getViewOrientation } from "./coordinates"
 
@@ -37,10 +40,25 @@ export async function convertCircuitJsonToDrawingPages(
     throw new Error("supersampling must be a positive integer")
   if (!Number.isFinite(maxRasterPixels) || maxRasterPixels <= 0)
     throw new Error("maxRasterPixels must be finite and positive")
-  const { pages, views, titleBlocks, edges, dimensions } = parseDrawingDocument(
+  const { pages, views, titleBlocks, dimensions } = parseDrawingDocument(
     input,
     options.drawingPageId,
   )
+  if (
+    !options.resolveModelEdge &&
+    dimensions.some(
+      (dimension) =>
+        dimension.measurement === "edge" &&
+        views.some(
+          (view) =>
+            view.drawing_part_view_id === dimension.drawing_part_view_id &&
+            pages.some((page) => page.drawing_page_id === view.drawing_page_id),
+        ),
+    )
+  )
+    throw new Error(
+      "resolveModelEdge callback is required for model edge dimensions",
+    )
   // Validate allocation limits before starting network or scene work.
   for (const view of views.filter((v) =>
     pages.some((s) => s.drawing_page_id === v.drawing_page_id),
@@ -118,28 +136,24 @@ export async function convertCircuitJsonToDrawingPages(
       })
       const png = await encodePNG(bitmap),
         pngUrl = `data:image/png;base64,${toBase64(png)}`
-      const dimensionSvg = dimensions
-        .filter(
-          (dimension) =>
-            dimension.drawing_part_view_id === view.drawing_part_view_id,
+      const annotations: string[] = []
+      for (const dimension of dimensions.filter(
+        (dimension) =>
+          dimension.drawing_part_view_id === view.drawing_part_view_id,
+      )) {
+        const reference =
+          dimension.measurement === "edge"
+            ? referenceForModelEdge(
+                await options.resolveModelEdge!(dimension, view, input),
+                dimension,
+                camera,
+              )
+            : inferViewDimensionReference(dimension, renderedGeometry, camera)
+        annotations.push(
+          renderDrawingDimension(dimension, reference, view, page, camera).svg,
         )
-        .map(
-          (dimension) =>
-            renderDrawingDimension(
-              dimension,
-              dimension.measurement === "edge"
-                ? edges.get(dimension.cad_named_edge_id!)!
-                : inferViewDimensionReference(
-                    dimension,
-                    renderedGeometry,
-                    camera,
-                  ),
-              view,
-              page,
-              camera,
-            ).svg,
-        )
-        .join("")
+      }
+      const dimensionSvg = annotations.join("")
       rendered.push({ view, pngUrl, dimensionSvg })
     }
     output.push({

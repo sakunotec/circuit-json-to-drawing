@@ -1,15 +1,18 @@
-import { booleans, primitives, extrusions } from "@jscad/modeling"
-import { mp } from "@tscircuit/modelprinter"
+import {
+  createRectangularTubeModel,
+  listJscadNamedEdges,
+  readJscadNamedEdge,
+} from "jscad-electronics/vanilla"
 import type {
-  CadNamedEdgeInput,
+  DrawingDimension,
   DrawingDimensionInput,
   DrawingPartView,
 } from "circuit-json"
 import { cadScene } from "./models"
 
-/** Open stock tube in model-local CAD mm (+Z up), ends at Z=0 and Z=length.
- * This fixture's placement is identity: modelprinter reference points therefore
- * become CAD world-space points without an additional transform.
+/** The solid and named native JSCAD paths come from the same renderer model.
+ * Placement is identity here, so the reader's model-local CAD mm (+Z up) also
+ * serve as CAD world points. A placed instance must transform every sample.
  */
 export function rectangularTubeDrawing(
   width = 40,
@@ -18,27 +21,14 @@ export function rectangularTubeDrawing(
   length = 80,
   outerRadius = 0,
 ) {
-  const metadata = mp
-    .string(
-      `rectangulartube_w${width}mm_h${height}mm_wall${wall}mm_l${length}mm_outerr${outerRadius}mm`,
-    )
-    .drawing()!
-  const crossSection = outerRadius
-    ? primitives.roundedRectangle({
-        size: [width, height],
-        roundRadius: outerRadius,
-        segments: 32,
-      })
-    : primitives.rectangle({ size: [width, height] })
-  const scene = cadScene(
-    extrusions.extrudeLinear(
-      { height: length },
-      booleans.subtract(
-        crossSection,
-        primitives.rectangle({ size: [width - 2 * wall, height - 2 * wall] }),
-      ),
-    ),
-  )
+  const model = createRectangularTubeModel({
+    width,
+    height,
+    wallThickness: wall,
+    length,
+    outerRadius,
+  })
+  const scene = cadScene(model.geometry)
   const page = {
     type: "drawing_page" as const,
     drawing_page_id: "tube_sheet",
@@ -53,12 +43,6 @@ export function rectangularTubeDrawing(
     cad_component_id: "cad_tube",
     source_component_id: "source_tube",
   }
-  const edges: CadNamedEdgeInput[] = metadata.namedEdges.map((edge) => ({
-    type: "cad_named_edge",
-    cad_named_edge_id: `edge_${edge.name}`,
-    cad_component_id: cad.cad_component_id,
-    ...edge,
-  }))
   const views: DrawingPartView[] = [
     {
       type: "drawing_part_view",
@@ -94,25 +78,29 @@ export function rectangularTubeDrawing(
       height: 115,
     },
   ]
-  const dimensions: DrawingDimensionInput[] = metadata.views.flatMap((view) =>
-    view.dimensions.map(
-      ({ edgeRef, widthOfView, heightOfView, ...dimension }) => {
-        const measurement = widthOfView
-          ? "view_width"
-          : heightOfView
-            ? "view_height"
-            : "edge"
-        return {
-          type: "drawing_dimension" as const,
-          drawing_dimension_id: `${view.name}_${edgeRef ?? measurement}`,
-          drawing_part_view_id: view.name,
-          measurement,
-          ...(edgeRef ? { cad_named_edge_id: `edge_${edgeRef.slice(1)}` } : {}),
-          ...dimension,
-        }
-      },
-    ),
-  )
+  const dimensions: DrawingDimensionInput[] = [
+    {
+      type: "drawing_dimension",
+      drawing_dimension_id: "end_view_width",
+      drawing_part_view_id: "end",
+      measurement: "view_width",
+      offset: 10,
+    },
+    {
+      type: "drawing_dimension",
+      drawing_dimension_id: "end_view_height",
+      drawing_part_view_id: "end",
+      measurement: "view_height",
+      offset: 10,
+    },
+    {
+      type: "drawing_dimension",
+      drawing_dimension_id: "side_view_height",
+      drawing_part_view_id: "side",
+      measurement: "view_height",
+      offset: -10,
+    },
+  ]
   const block = {
     type: "drawing_page_title_block",
     drawing_page_title_block_id: "tube_title",
@@ -121,17 +109,24 @@ export function rectangularTubeDrawing(
     identification_number: "STK-040-020-003",
     revision_index: "A",
     legal_owner: "tscircuit",
-    creator: "Modelprinter",
+    creator: "jscad-electronics",
     sheet_number: 1,
     number_of_sheets: 1,
   }
   return {
-    input: [page, cad, ...edges, ...views, ...dimensions, block],
+    input: [page, cad, ...views, ...dimensions, block],
     scene,
-    edges,
+    cad,
     views,
     dimensions,
     page,
-    metadata,
+    model,
+    edgeNames: listJscadNamedEdges(model),
+    readEdge: (name: string) => readJscadNamedEdge(model, name),
+    resolveModelEdge: (dimension: DrawingDimension) => {
+      if (dimension.cad_component_id !== cad.cad_component_id)
+        throw new Error("Model edge references an unknown CAD component")
+      return readJscadNamedEdge(model, dimension.edge_name!)
+    },
   }
 }

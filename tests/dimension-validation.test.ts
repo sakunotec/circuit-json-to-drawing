@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test"
 import "bun-match-svg"
-import { cad_named_edge, drawing_dimension } from "circuit-json"
+import { drawing_dimension } from "circuit-json"
 import { renderDrawCalls } from "poppygl"
 import { convertCircuitJsonToDrawingSvg } from "../lib"
 import { renderDrawingDimension } from "../lib/dimensions"
+import { referenceForModelEdge } from "../lib/model-edge-reference"
 import type { DrawingDocument } from "../lib"
 import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 
@@ -13,7 +14,8 @@ test("dimensions reject broken ownership and unusable projections before produci
     ...fixture.dimensions[0]!,
     drawing_dimension_id: "explicit_outer_top",
     measurement: "edge" as const,
-    cad_named_edge_id: fixture.edges[0]!.cad_named_edge_id,
+    cad_component_id: fixture.cad.cad_component_id,
+    edge_name: "outer_top",
   }
   const inputWithEdge = [...fixture.input, edgeDimension]
   const patchDimension = (patch: object) =>
@@ -26,11 +28,7 @@ test("dimensions reject broken ownership and unusable projections before produci
     )
   const invalid: DrawingDocument[] = [
     patchDimension({ drawing_part_view_id: "missing" }),
-    patchDimension({ cad_named_edge_id: "missing" }),
-    [
-      ...fixture.input,
-      { ...fixture.edges[0]!, cad_named_edge_id: "ambiguous" },
-    ],
+    patchDimension({ cad_component_id: "missing" }),
     [...fixture.input, fixture.dimensions[0]!],
     [
       ...fixture.input,
@@ -40,7 +38,7 @@ test("dimensions reject broken ownership and unusable projections before produci
         source_component_id: "foreign_part",
       },
     ],
-    fixture.input.filter((record) => record.type !== "cad_component"),
+    inputWithEdge.filter((record) => record.type !== "cad_component"),
     inputWithEdge.map((record) =>
       record.type === "drawing_part_view"
         ? { ...record, source_component_ids: ["foreign_part"] }
@@ -60,9 +58,33 @@ test("dimensions reject broken ownership and unusable projections before produci
           resolutions++
           return fixture.scene
         },
+        resolveModelEdge: fixture.resolveModelEdge,
       }),
     ).rejects.toThrow()
   expect(resolutions).toBe(0)
+  await expect(
+    convertCircuitJsonToDrawingSvg(inputWithEdge, {
+      resolveScene: () => fixture.scene,
+    }),
+  ).rejects.toThrow("resolveModelEdge")
+  await expect(
+    convertCircuitJsonToDrawingSvg(patchDimension({ edge_name: "missing" }), {
+      resolveScene: () => fixture.scene,
+      resolveModelEdge: fixture.resolveModelEdge,
+    }),
+  ).rejects.toThrow()
+  await expect(
+    convertCircuitJsonToDrawingSvg(inputWithEdge, {
+      resolveScene: () => fixture.scene,
+      resolveModelEdge: () => ({
+        points: [
+          { x: NaN, y: 0, z: 0 },
+          { x: 1, y: 0, z: 0 },
+        ],
+        closed: false,
+      }),
+    }),
+  ).rejects.toThrow("finite")
   const camera = renderDrawCalls(fixture.scene.drawCalls, {
     projection: "orthographic",
     width: 320,
@@ -78,8 +100,25 @@ test("dimensions reject broken ownership and unusable projections before produci
     height: 80,
     center: { x: 0, y: 0 },
   }
-  const edge = cad_named_edge.parse(fixture.edges[0]),
+  const points = [...fixture.readEdge("outer_top").points].sort(
+    (a, b) => a.x - b.x,
+  )
+  const edge = { name: "outer_top", start: points[0]!, end: points.at(-1)! },
     dimension = drawing_dimension.parse(edgeDimension)
+  expect(() =>
+    referenceForModelEdge(
+      {
+        points: [
+          { x: 0, y: 0, z: 0 },
+          { x: 10, y: 10, z: 0 },
+          { x: 20, y: 0, z: 0 },
+        ],
+        closed: false,
+      },
+      dimension,
+      camera,
+    ),
+  ).toThrow("straight")
   const zero = renderDrawingDimension(
     { ...dimension, offset: 0 },
     edge,

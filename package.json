@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "poppygl": "^0.0.37",
-    "circuit-json": "https://pkg.pr.new/circuit-json@bf9aadb",
+    "circuit-json": "https://pkg.pr.new/circuit-json@ffdaade",
     "@tscircuit/alphabet": "0.0.25",
     "gl-matrix": "^3.4.4"
   },
@@ -31,7 +31,7 @@
     "bun-match-svg": "^0.0.17",
     "@jscad/modeling": "2.13.0",
     "fast-png": "^8.0.0",
-    "@tscircuit/modelprinter": "https://pkg.pr.new/tscircuit/modelprinter/@tscircuit/modelprinter@1ded19f"
+    "jscad-electronics": "https://pkg.pr.new/tscircuit/jscad-electronics@d43f6d7"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

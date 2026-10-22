@@ -108,13 +108,14 @@ for the title block.
 
 ## Options
 
-| Option            | Default            | Meaning                                                                |
-| ----------------- | ------------------ | ---------------------------------------------------------------------- |
-| `drawingPageId`   | all pages          | Select a configured page                                               |
-| `pixelsPerMm`     | 4                  | Positive finite view raster resolution; does not change physical scale |
-| `supersampling`   | 2                  | Positive integer antialiasing factor                                   |
-| `maxRasterPixels` | 16,000,000         | Supersampled pixel limit per view, checked before scene resolution     |
-| `resolveScene`    | required to render | Resolve configured part geometry into a PoppyGL scene                  |
+| Option             | Default                      | Meaning                                                                                                   |
+| ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `drawingPageId`    | all pages                    | Select a configured page                                                                                  |
+| `pixelsPerMm`      | 4                            | Positive finite view raster resolution; does not change physical scale                                    |
+| `supersampling`    | 2                            | Positive integer antialiasing factor                                                                      |
+| `maxRasterPixels`  | 16,000,000                   | Supersampled pixel limit per view, checked before scene resolution                                        |
+| `resolveScene`     | required to render           | Resolve configured part geometry into a PoppyGL scene                                                     |
+| `resolveModelEdge` | required for edge dimensions | Read named geometry from its owning model; return sampled CAD world points and whether the path is closed |
 
 ## Install and development
 
@@ -133,7 +134,7 @@ check workflows. Public imports have no native rasterizer dependency; visual tes
 rasterization is dev-only. Preview dependency pins are temporary until upstream
 schema and packaging PRs are released.
 
-Twelve test files contain one test and one visual SVG snapshot each. They cover
+Test files contain one test and one visual SVG snapshot each. They cover
 caller-supplied GLB geometry without drawing image fields, independent part
 selections, multiple pages, six axis directions, hidden edges, section planes,
 physical scale/clipping, dimensions and configuration validation.
@@ -179,9 +180,9 @@ does not write repository contents or create version commits. No build or native
 
 ## Geometry-derived linear dimensions
 
-The proposed `drawing_dimension` record distinguishes an actual model-defined
-edge from explicit inferred view extents. Conventional linear annotations add
-extension lines, arrowheads, and geometry-derived labels to part views:
+The proposed `drawing_dimension` record distinguishes native model-edge references
+from explicit inferred view extents. Conventional annotations add extension lines,
+arrowheads, and geometry-derived labels:
 
 ```tsx
 <assembly.drawing.partview
@@ -193,31 +194,32 @@ extension lines, arrowheads, and geometry-derived labels to part views:
 >
   <assembly.drawing.dimension widthOfView offset="10mm" />
   <assembly.drawing.dimension heightOfView offset="10mm" />
+  <assembly.drawing.dimension edgeRef=".tube > .outer_top" offset="23mm" />
 </assembly.drawing.partview>
 ```
 
-A feature dimension instead uses a selector for an edge authored by that model,
-for example `<assembly.drawing.dimension edgeRef=".tube > .outer_top" />`.
-An arbitrary `overall_width` name is not a bounds request. In Circuit JSON,
-`measurement: "edge"` requires `cad_named_edge_id`; `view_width` and `view_height`
-reference only the part view and never fabricate named envelope edges.
+`edgeRef` selects a name actually defined by the owning model. A label such as
+`overall_width` is not a bounds request. In Circuit JSON, `measurement: "edge"`
+references `cad_component_id` and opaque `edge_name`; `view_width` and `view_height`
+reference only the part view. Circuit JSON contains neither edge geometry nor a
+topology schema.
 
-Presets measure selected rendered geometry in camera model axes after transforms
-and section cuts. Labels are model mm, independent of viewport paper size,
-auto-fit, or explicit drawing scale. The sharp 40 × 20 × 80 mm stock-tube example
-shows exactly three inferred overall dimensions: 40.0, 20.0, and 80.0. With a
-3 mm outer corner radius, the actual `outer_top` straight edge is 34 mm long,
-while the end-view width remains 40 mm. The rounded example shows that distinction.
+Callers supply `resolveModelEdge(dimension, view, input)` for native edge requests.
+It loads the owning model and returns an ephemeral sampled path
+`{ points, closed }` in CAD world mm (+Z up). The geometry remains owned by the
+source model. The first demonstration reads JSCAD named paths/solids from
+[jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504);
+STEP and glTF readers remain follow-up adapters.
 
-[Dimension authoring, coordinates and examples](docs/dimensions.md) covers the
-TSX intent, modelprinter metadata, measurement records, and layout semantics.
-Core selector resolution and dimension emission remain future integration work.
+A rounded 40mm tube has a real 34mm straight `outer_top` edge and a closed
+`outer_profile` spanning 40mm. Horizontal/vertical edge dimensions use all of a
+native path's points; they do not reduce curves to an endpoint chord. The initial
+aligned mode supports straight open edges and rejects unsupported curves.
 
-![Dimensioned rectangular stock tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
+See [the dimension contract and model-reader example](docs/dimensions.md).
+The proposed TSX intent is defined in [props #953](https://github.com/tscircuit/props/pull/953)
+and the opaque association in [Circuit JSON #922](https://github.com/tscircuit/circuit-json/pull/922).
 
-![Model-defined top edge versus inferred width on a rounded tube](tests/__snapshots__/view-extent-dimensions.snap.svg)
+![Overall dimensions of the rendered tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
 
-This proposal consumes immutable previews from
-[Circuit JSON #922](https://github.com/tscircuit/circuit-json/pull/922) and
-[modelprinter #121](https://github.com/tscircuit/modelprinter/pull/121).
-The TSX intent is defined in [props #953](https://github.com/tscircuit/props/pull/953).
+![Rounded tube native edge and inferred width](tests/__snapshots__/view-extent-dimensions.snap.svg)

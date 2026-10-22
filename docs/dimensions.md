@@ -1,15 +1,15 @@
-# Linear dimensions from model geometry
+# Linear dimensions from native model geometry
 
 `drawing_dimension` annotates one `drawing_part_view` with a vector dimension
-line, extension lines, arrowheads, and a numeric label. The measurement request
-explicitly chooses an actual model-defined edge or an inferred view extent.
-Values come from model geometry in mm. There is no independent numeric or text
-override that can drift from the model.
+line, extension lines, arrowheads, and a numeric label. A request selects either
+named geometry provided by its source model or an inferred view extent. Values
+come from that geometry in model mm; no independent numeric or text override can
+drift from the model.
 
 ## Authoring intent
 
-Dimensions nest under the part view. The overall dimensions of a selected part
-use explicit view presets:
+Dimensions nest under a part view. Use explicit boolean presets for the overall
+size of its selected geometry:
 
 ```tsx
 <assembly.drawing.partview
@@ -24,8 +24,7 @@ use explicit view presets:
 </assembly.drawing.partview>
 ```
 
-To measure a particular feature, select a named edge actually defined by the
-model. A scoped selector makes the model association explicit:
+For a particular feature, reference a named edge actually provided by the model:
 
 ```tsx
 <assembly.drawing.partview
@@ -44,75 +43,82 @@ model. A scoped selector makes the model association explicit:
 </assembly.drawing.partview>
 ```
 
-Choose exactly one of `edgeRef`, `widthOfView`, or `heightOfView` per dimension.
-`widthOfView` and `heightOfView` are boolean presets. They are not named edges,
-and an arbitrary name such as `overall_width` does not request inferred bounds.
-Props #953 defines this intent. Core registration, selector resolution, and
-Circuit JSON dimension emission remain future integration work. This exporter
-consumes the resolved records directly and does not interpret TSX selectors.
+Select exactly one of `edgeRef`, `widthOfView`, or `heightOfView`.
+The booleans request inferred extents, not imaginary named edges; an arbitrary
+`overall_width` string is not a bounds request. Props #953 rejects conflicting
+targets and explicit orientation with a true view preset. False booleans do not
+select a target. Core registration, selector resolution, and dimension emission
+remain future integration work. The exporter reads resolved Circuit JSON and
+does not interpret TSX selectors.
 
-## Modelprinter feature definitions
+## Native geometry ownership
 
-The companion modelprinter proposal exposes explicit analytic model edges and
-suggested view/dimension intents:
+Edges are not defined as endpoint pairs in drawing configuration or modelprinter.
+A source model owns its native geometry and names: a JSCAD path can contain lines
+and arcs, STEP can carry topology and native labels, and glTF producers can carry
+named geometry metadata. There is no universal topology schema here, and mesh
+indices do not automatically become stable edge names. STEP and glTF reader
+adapters remain follow-up work.
+
+The first implementation uses JSCAD geometry from jscad-electronics:
 
 ```ts
-import { mp } from "@tscircuit/modelprinter";
+import {
+  createRectangularTubeModel,
+  listJscadNamedEdges,
+  readJscadNamedEdge,
+} from "jscad-electronics";
 
-const sharp = mp
-  .string("rectangulartube_w40mm_h20mm_wall3mm_l80mm_outerr0mm")
-  .drawing()!;
-// sharp.namedEdges: outer_top, outer_left, outer_right_longitudinal
-// sharp.views: end widthOfView/heightOfView, side heightOfView
+const tube = createRectangularTubeModel({
+  width: 40,
+  height: 20,
+  wallThickness: 3,
+  length: 80,
+  outerRadius: 3,
+});
 
-const rounded = mp
-  .string("rectangulartube_w40mm_h20mm_wall3mm_l80mm_outerr3mm")
-  .drawing()!;
-// rounded outer_top: (-17, 10, 0) to (17, 10, 0), length 34 mm
-// end-view widthOfView: 40 mm
+// tube.geometry is the native Geom3 solid.
+// tube.namedEdges owns native Geom2/Path2 features such as outer_top/outer_profile.
+const names = listJscadNamedEdges(tube);
+const top = readJscadNamedEdge(tube, "outer_top");
+const profile = readJscadNamedEdge(tube, "outer_profile");
 ```
 
-The rounded profile's straight `outer_top` feature stops at the corner tangency
-points. Its length is `40 - 2 × 3 = 34` mm, while the entire end profile remains
-40 mm wide. No artificial envelope edge is published to make those values agree.
-The explicit edge name remains stable as parameters change, with endpoints
-recomputed by the model definition. These are analytic feature definitions,
-independent of mesh vertex numbering, not automatic B-rep topological naming.
+`createRectangularTubeModel` returns
+`{ geometry: Geom3, namedEdges: Record<string, Geom2 | Path2> }`.
+The readers operate on those model-owned objects. `outer_top` is the straight
+feature between rounded-corner tangencies, measuring `40 - 2 × 3 = 34`mm.
+`outer_profile` is the closed rounded contour spanning the actual 40mm width.
+No artificial 40mm envelope edge is created to make the feature length agree with
+the overall width.
 
-Modelprinter points are model-local, right-handed CAD mm, with +Z up. Eventual
-core support must resolve the model-defined selector and transform both endpoints
-as points through the same scale, rotation, and translation as the owning model.
-It then assigns `cad_named_edge_id` and emits world-space points. The exporter
-must not reapply the CAD model transform. The stock-tube fixtures use identity
-placement, so their local and world points agree; projection tests separately
-exercise transformed geometry.
+The JSCAD model and reader use model-local right-handed CAD XYZ in mm, +Z up.
+Modelprinter continues to own parameter strings, schemas, defaults, dimensions,
+and validation; it does not duplicate named edge geometry. Its earlier endpoint
+metadata proposal (#121) is superseded by model-native geometry ownership.
 
-## Circuit JSON records
+## Circuit JSON associations
 
-Edge dimensions retain an actual named-edge association:
+An edge request records only the owning model and its opaque native name:
 
 ```ts
-{
-  type: "cad_named_edge",
-  cad_named_edge_id: "tube_outer_top",
-  cad_component_id: "cad_tube",
-  name: "outer_top",
-  start: { x: -17, y: 10, z: 0 },
-  end: { x: 17, y: 10, z: 0 },
-}
 {
   type: "drawing_dimension",
   drawing_dimension_id: "end_top_feature",
   drawing_part_view_id: "end",
   measurement: "edge",
-  cad_named_edge_id: "tube_outer_top",
+  cad_component_id: "cad_tube",
+  edge_name: "outer_top",
   orientation: "horizontal",
   offset: 23,
   precision: 1,
 }
 ```
 
-Inferred extents reference only the part view:
+The referenced CAD component already describes how to obtain and place its model.
+The dimension does not duplicate the edge's shape, curve, endpoints, or topology.
+
+An inferred extent references only the part view:
 
 ```ts
 {
@@ -126,63 +132,100 @@ Inferred extents reference only the part view:
 ```
 
 `measurement` is `edge` (default), `view_width`, or `view_height`. Edge mode
-requires `cad_named_edge_id`; view presets forbid it. Presets normalize orientation
-to horizontal for width and vertical for height. A matching explicit orientation
-is accepted; a conflicting one is rejected. They do not generate synthetic
-`cad_named_edge` records.
+requires `cad_component_id` and `edge_name`; view presets forbid those fields.
+Presets normalize orientation to horizontal for width and vertical for height.
+Canonical Circuit JSON may retain the matching orientation; a conflicting one is
+invalid. Presets produce no named edge record.
 
-For an edge dimension, the edge's `cad_component_id` must resolve to a CAD record
-carrying its `source_component_id`. That source must belong to the part view's
-selected source components/group. If both selection fields are present, both
-constraints apply. The exporter rejects missing references, duplicate IDs,
-duplicate edge names on one CAD part, and out-of-selection edges before invoking
-the scene resolver. Named edges describe the model and add no mesh geometry.
+For an edge request, the owning CAD record must exist and its source component
+must belong to the view's selected source components/group. If both selection
+fields are supplied, both constraints apply. Duplicate IDs, missing owners,
+missing views, and out-of-selection owner references are errors. Unknown native
+names or unsupported native geometry must be rejected by the model reader rather
+than replaced with inferred bounds.
 
-## Measurement and layout
+## Reading model geometry
 
-- `aligned` edge dimensions label the true 3D endpoint distance, including in an
-  isometric view. Their dimension line follows the projected segment.
-- `horizontal` and `vertical` edge dimensions measure the absolute component along
-  the view's orthonormal camera right/up directions in model mm.
-- `view_width` and `view_height` measure the extents of the selected rendered
-  geometry after its model/world transforms, projected onto the camera right/up
-  model axes. Section views use the retained cut geometry, not the uncut model.
-  The paper viewport's width/height and fitted raster size are not measurements.
-- `offset` defaults to 8 signed paper mm. Positive follows the left normal of the
-  dimension line in paper +Y-up coordinates. Horizontal endpoints are ordered
-  left-to-right (positive above); vertical endpoints bottom-to-top (positive
-  left). Inferred presets start from the outer boundary on that side: width below
-  for negative offsets, height to the right for negative offsets. Aligned edges
-  preserve authored start-to-end order. Zero is permitted.
-- `precision` defaults to 1 and accepts integer decimal places 0–6. Drawing
-  measurement units are model mm.
+`DrawingOptions.resolveModelEdge(dimension, view, input)` may return synchronously
+or asynchronously. It resolves the owning model and samples that named geometry
+for projection:
 
-The renderer uses the exact PoppyGL raster camera for annotation projection,
-including auto-fit, explicit scale, section cuts, and nonzero world placement.
-CAD +Z-up points are converted to glTF +Y-up at that boundary. Numeric measurements
-remain in model mm when paper scale or raster resolution changes. A 40 mm extent
-therefore still labels 40.0 at 1:1 or 1:2.
+```ts
+const svg = await convertCircuitJsonToDrawingSvg(circuitJson, {
+  resolveScene: () => tubeScene,
+  resolveModelEdge: (dimension) => {
+    if (dimension.cad_component_id !== "cad_tube") {
+      throw new Error("The requested model is not loaded");
+    }
+    // This example's model placement is identity, so local CAD points are world points.
+    return readJscadNamedEdge(tube, dimension.edge_name!);
+  },
+});
+```
 
-Edges viewed end-on and zero extents on the chosen axis are errors. Numerical
-overflow and annotation geometry extending outside the sheet are rejected.
-Arrowheads, line widths, and text sizes retain physical paper sizes. Short spans
-use outside arrows and a leader. Offsets are authored layout choices; automatic
-annotation placement, collision avoidance, diameter/radius, angular dimensions,
+The callback result is `{ points: readonly { x, y, z }[], closed: boolean }`.
+This is a temporary sampling adapter for renderer use, outside Circuit JSON;
+it is not the model's topology definition. Curves remain native to the model.
+The adapter must supply finite CAD world-space points in mm (+Z up) after the
+same instance scale, rotation, and translation used by the rendered model. It
+must report whether the path is closed. The exporter converts CAD points to
+glTF +Y-up for projection and does not reapply the model's placement. Cache model
+loading and native reader results in the caller when several dimensions share a
+model.
+
+Horizontal and vertical dimensions measure the full sampled path's span on the
+camera's right/up axes. A closed `outer_profile` therefore measures 40mm wide;
+using only its first and last point would incorrectly collapse a closed contour.
+For this initial linear annotation, aligned dimensions accept only a straight,
+open edge. Closed paths and noncollinear curves must fail rather than silently
+turning into an endpoint chord. Radius, diameter, arc-length, and angular
+annotations remain future work.
+
+## Measurement and paper layout
+
+- `aligned` measures a supported straight edge's true 3D length, including in an
+  isometric view; its dimension line follows the projected edge.
+- `horizontal` and `vertical` measure the native geometry's span along the view's
+  orthonormal right/up model axes, using all sampled points.
+- `view_width` and `view_height` measure the selected rendered geometry after
+  model/world transforms. Section views use retained cut geometry. Viewport size,
+  paper scale, and raster allocation do not supply the measured value.
+- `offset` defaults to 8 signed paper mm. Positive follows the left normal in
+  paper +Y-up coordinates: horizontal above, vertical left. Negative inferred
+  offsets choose the bottom or right bounding side. Aligned edges retain native
+  direction. Zero is allowed.
+- `precision` defaults to 1 and accepts integer decimal places 0–6. Values are
+  shown in model mm.
+
+Annotations use the same camera as the PoppyGL raster, including auto-fit,
+explicit scale, sections, and nonzero world placement. Model values remain
+independent of paper scale and raster resolution: a 40mm extent still labels
+40.0 at 1:1 or 1:2. End-on edges, zero extents, numerical overflow, and annotation
+geometry extending outside the page are errors. Arrowheads, strokes, and text
+retain physical paper sizes; short spans use outside arrows and a leader.
+Automatic collision avoidance, diameter/radius and angular annotations,
 tolerances, and certified drafting styles remain follow-up work.
 
 ## Demonstrations
 
-The sharp stock-tube sheet shows a real open 40 × 20 mm profile and 80 mm side
-length, plus an isometric view. Its three overall dimensions are inferred view
-presets and read 40.0, 20.0, and 80.0. None uses a named envelope edge.
+The sharp 40 × 20 × 80mm tube uses width/height presets for its overall end and
+side dimensions. Its isometric and section views come from the same native model.
+The rounded profile with `outerRadius = 3`mm demonstrates the distinction between
+a real 34.0mm `outer_top` feature, a 40.0mm closed native `outer_profile` span, and
+an inferred overall width of 40.0mm. A section at Z=40 retains a 40.0mm side-view
+height. Tests also exercise changed parameters, world placement, scale, invalid
+references, unsupported curves, short spans, signed offsets, and page bounds.
+The companion jscad-electronics tests inspect the native model/paths; these SVGs
+inspect the rendered drawing annotations:
 
-The rounded-profile sheet uses `outerRadius = 3` mm. The actual `outer_top` edge
-reads 34.0 while the end-view width preset reads 40.0. Sectioning the 80 mm tube
-at Z=40 changes the retained side-view extent to 40.0. Additional tests cover
-parameter changes, transformed geometry, independent model/paper scale, invalid
-selection/measurement combinations, short spans, signed offsets, and page bounds.
+![Inferred overall tube dimensions](../tests/__snapshots__/named-edge-dimensions.snap.svg)
+
+![Native rounded-tube feature dimensions](../tests/__snapshots__/view-extent-dimensions.snap.svg)
 
 References: [Autodesk linear dimension guide](https://help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-MAC-Core/files/GUID-42FD07E0-B6D8-4BCD-A621-EDDC94B8864B.htm)
 and [FreeCAD TechDraw length dimensions](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/TechDraw_LengthDimension.md).
-These describe conventional linear-dimension concepts. This implementation does
-not claim complete ISO/ASME drafting compliance.
+These provide conventional drafting terminology; this implementation does not
+claim complete ISO/ASME drafting compliance.
+
+The native feature reader and its four-view model snapshot are proposed in
+[jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504).

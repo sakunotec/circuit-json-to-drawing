@@ -1,23 +1,23 @@
 import { expect, test } from "bun:test"
 import "bun-match-svg"
-import {
-  cad_named_edge,
-  drawing_dimension,
-  type DrawingPartView,
-} from "circuit-json"
+import { drawing_dimension, type DrawingPartView } from "circuit-json"
 import { mat4 } from "gl-matrix"
 import { renderDrawCalls } from "poppygl"
 import { convertCircuitJsonToDrawingSvg } from "../lib"
 import { measureDrawingEdge, projectDrawingPoint } from "../lib/dimensions"
+import { referenceForModelEdge } from "../lib/model-edge-reference"
 import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 
 test("dimension values stay in model mm while geometry follows view scale and CAD placement", async () => {
   const fixture = rectangularTubeDrawing()
-  const edge = cad_named_edge.parse(fixture.edges[0])
+  const nativeEdge = fixture.readEdge("outer_top")
+  const points = [...nativeEdge.points].sort((a, b) => a.x - b.x)
+  const edge = { name: "outer_top", start: points[0]!, end: points.at(-1)! }
   const dimension = drawing_dimension.parse({
     ...fixture.dimensions[0],
     measurement: "edge",
-    cad_named_edge_id: edge.cad_named_edge_id,
+    cad_component_id: fixture.cad.cad_component_id,
+    edge_name: "outer_top",
   })
   const views: DrawingPartView[] = [1, 0.5].map((scale, index) => ({
     ...fixture.views[0]!,
@@ -55,11 +55,18 @@ test("dimension values stay in model mm while geometry follows view scale and CA
       lookAt: [12, 36, -7],
       up: "z-",
     }).camera
-    const movedEdge = {
-      ...edge,
-      start: { x: edge.start.x + 12, y: edge.start.y + 7, z: edge.start.z - 4 },
-      end: { x: edge.end.x + 12, y: edge.end.y + 7, z: edge.end.z - 4 },
-    }
+    const movedEdge = referenceForModelEdge(
+      {
+        ...nativeEdge,
+        points: points.map((point) => ({
+          x: point.x + 12,
+          y: point.y + 7,
+          z: point.z - 4,
+        })),
+      },
+      dimension,
+      movedCamera,
+    )
     expect(
       projectDrawingPoint(movedEdge.start, view, movedCamera).x,
     ).toBeCloseTo(start.x, 5)
@@ -79,11 +86,18 @@ test("dimension values stay in model mm while geometry follows view scale and CA
       lookAt: [0, 40, 0],
       up: "z-",
     }).camera
-    const rotatedEdge = {
-      ...edge,
-      start: { x: -edge.start.y, y: edge.start.x, z: edge.start.z },
-      end: { x: -edge.end.y, y: edge.end.x, z: edge.end.z },
-    }
+    const rotatedEdge = referenceForModelEdge(
+      {
+        ...nativeEdge,
+        points: points.map((point) => ({
+          x: -point.y,
+          y: point.x,
+          z: point.z,
+        })),
+      },
+      { ...dimension, orientation: "vertical" },
+      rotatedCamera,
+    )
     expect(
       measureDrawingEdge(
         rotatedEdge,
@@ -136,6 +150,7 @@ test("dimension values stay in model mm while geometry follows view scale and CA
   ]
   const svg = await convertCircuitJsonToDrawingSvg(input, {
     resolveScene: () => fixture.scene,
+    resolveModelEdge: fixture.resolveModelEdge,
   })
   expect(svg.match(/data-measured-value="40"/g)).toHaveLength(2)
   expect(svg).toContain("1:2")

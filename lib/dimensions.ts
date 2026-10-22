@@ -1,5 +1,4 @@
 import type {
-  CadNamedEdge,
   DrawingDimension,
   DrawingPage,
   DrawingPartView,
@@ -8,19 +7,26 @@ import { mat4, vec4 } from "gl-matrix"
 import type { Camera } from "poppygl"
 import { cadToGltf } from "./coordinates"
 import { escapeXml } from "./svg"
+import type { DrawingPoint } from "./types"
 
 type Point2 = { x: number; y: number }
-export type DrawingReferenceSegment = Pick<
-  CadNamedEdge,
-  "name" | "start" | "end"
->
+/** Witness points for one linear annotation, after a reader has interpreted a
+ * model feature. These are not an edge definition or a Circuit JSON element.
+ */
+export interface DrawingReferenceSegment {
+  name: string
+  start: DrawingPoint
+  end: DrawingPoint
+  /** Reader samples used only to place the dimension outside the whole feature. */
+  clearancePoints?: readonly DrawingPoint[]
+}
 
 /** Project CAD world-space points (right-handed mm, +Z up) through the exact
  * glTF (+Y-up) camera used for the view raster, into page-centered paper mm
  * (+X right, +Y up). No model-to-paper scale is used for measurement values.
  */
 export function projectDrawingPoint(
-  point: CadNamedEdge["start"],
+  point: DrawingPoint,
   view: DrawingPartView,
   camera: Camera,
 ): Point2 {
@@ -105,10 +111,15 @@ export function renderDrawingDimension(
   const normal = { x: -tangent.y, y: tangent.x }
   const dot = (point: Point2) => point.x * normal.x + point.y * normal.y
   const side = dimension.offset < 0 ? -1 : 1
+  const clearance = (edge.clearancePoints ?? [edge.start, edge.end]).map(
+    (point) => dot(projectDrawingPoint(point, view, camera)),
+  )
   const baseline =
-    (side > 0
-      ? Math.max(dot(start), dot(end))
-      : Math.min(dot(start), dot(end))) + dimension.offset
+    clearance.reduce(
+      (bound, coordinate) =>
+        side > 0 ? Math.max(bound, coordinate) : Math.min(bound, coordinate),
+      side > 0 ? -Infinity : Infinity,
+    ) + dimension.offset
   const onBaseline = (point: Point2): Point2 => ({
     x: point.x + normal.x * (baseline - dot(point)),
     y: point.y + normal.y * (baseline - dot(point)),
