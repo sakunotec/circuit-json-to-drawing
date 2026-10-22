@@ -11,9 +11,10 @@ import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 test("dimensions reject broken ownership and unusable projections before producing invalid SVG", async () => {
   const fixture = rectangularTubeDrawing()
   const edgeDimension = {
-    ...fixture.dimensions[0]!,
+    type: "drawing_dimension" as const,
     drawing_dimension_id: "explicit_outer_top",
-    measurement: "edge" as const,
+    drawing_part_view_id: "end",
+    offset: 10,
     cad_component_id: fixture.cad.cad_component_id,
     edge_name: "outer_top",
   }

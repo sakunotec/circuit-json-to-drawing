@@ -10,7 +10,10 @@ import type { DrawingReferenceSegment } from "./dimensions"
  * These are temporary view-bound datums, never named model edges or CJ records.
  */
 export function inferViewDimensionReference(
-  dimension: Pick<DrawingDimension, "measurement" | "offset">,
+  dimension: Pick<
+    DrawingDimension,
+    "width_of_view" | "height_of_view" | "offset"
+  >,
   drawCalls: DrawCall[],
   camera: Camera,
 ): DrawingReferenceSegment {
@@ -63,7 +66,7 @@ export function inferViewDimensionReference(
   }
   const widthY = dimension.offset < 0 ? minimum[1]! : maximum[1]!
   const heightX = dimension.offset < 0 ? maximum[0]! : minimum[0]!
-  return dimension.measurement === "view_width"
+  return dimension.width_of_view === true
     ? {
         name: "Width of view",
         start: toCad(minimum[0]!, widthY),

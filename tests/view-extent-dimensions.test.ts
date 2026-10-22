@@ -25,7 +25,6 @@ test("model-defined straight edges and inferred view extents remain distinct on 
       type: "drawing_dimension" as const,
       drawing_dimension_id: "actual_top_edge",
       drawing_part_view_id: "end",
-      measurement: "edge" as const,
       cad_component_id: fixture.cad.cad_component_id,
       edge_name: "outer_top",
       name: "Model-defined outer_top",
@@ -36,7 +35,6 @@ test("model-defined straight edges and inferred view extents remain distinct on 
       type: "drawing_dimension" as const,
       drawing_dimension_id: "native_closed_profile",
       drawing_part_view_id: "end",
-      measurement: "edge" as const,
       cad_component_id: fixture.cad.cad_component_id,
       edge_name: "outer_profile",
       name: "Native JSCAD rounded contour",
@@ -164,10 +162,11 @@ test("model-defined straight edges and inferred view extents remain distinct on 
     lookAt: [0, 40, 0],
     up: "z-",
   }).camera
-  for (const measurement of ["view_width", "view_height"] as const) {
+  for (const axis of ["width", "height"] as const) {
     const positiveDimension = drawing_dimension.parse({
       ...widthDimension,
-      measurement,
+      width_of_view: axis === "width",
+      height_of_view: axis === "height",
       orientation: undefined,
       offset: 8,
     })
@@ -194,7 +193,7 @@ test("model-defined straight edges and inferred view extents remain distinct on 
       fixture.page,
       frontCamera,
     )
-    if (measurement === "view_width") {
+    if (axis === "width") {
       expect(positive.dimensionStart.y).toBeGreaterThan(negative.end.y)
       expect(negative.dimensionStart.y).toBeLessThan(positive.start.y)
       expect(positive.start.y).toBeGreaterThan(negative.start.y)
@@ -221,7 +220,6 @@ test("model-defined straight edges and inferred view extents remain distinct on 
         type: "drawing_dimension",
         drawing_dimension_id: "curve_clearance",
         drawing_part_view_id: "end",
-        measurement: "edge",
         cad_component_id: fixture.cad.cad_component_id,
         edge_name: "curve",
         orientation,

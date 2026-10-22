@@ -14,8 +14,10 @@ test("dimension values stay in model mm while geometry follows view scale and CA
   const points = [...nativeEdge.points].sort((a, b) => a.x - b.x)
   const edge = { name: "outer_top", start: points[0]!, end: points.at(-1)! }
   const dimension = drawing_dimension.parse({
-    ...fixture.dimensions[0],
-    measurement: "edge",
+    type: "drawing_dimension",
+    drawing_dimension_id: "top_edge",
+    drawing_part_view_id: "end",
+    offset: 10,
     cad_component_id: fixture.cad.cad_component_id,
     edge_name: "outer_top",
   })

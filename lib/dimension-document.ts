@@ -75,7 +75,7 @@ export function parseDrawingDimensions(
     )
     if (!view)
       throw new Error("Drawing dimension references a missing part view")
-    if (dimension.measurement !== "edge") continue
+    if (dimension.edge_name === undefined) continue
     const owner = cadComponents.get(dimension.cad_component_id!)
     if (!owner) throw new Error(`Dimension references a missing CAD component`)
     const sourceId = owner.source_component_id

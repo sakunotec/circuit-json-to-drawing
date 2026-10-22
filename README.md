@@ -199,17 +199,22 @@ arrowheads, and geometry-derived labels:
 ```
 
 `edgeRef` selects a name actually defined by the owning model. A label such as
-`overall_width` is not a bounds request. In Circuit JSON, `measurement: "edge"`
-references `cad_component_id` and opaque `edge_name`; `view_width` and `view_height`
-reference only the part view. Circuit JSON contains neither edge geometry nor a
+`overall_width` is not a bounds request. Circuit JSON selects exactly one target:
+`cad_component_id` plus opaque `edge_name`, `width_of_view: true`, or
+`height_of_view: true`. View flags reference only the part view. There is no target
+enum or default target, and Circuit JSON contains neither edge geometry nor a
 topology schema.
 
 Callers supply `resolveModelEdge(dimension, view, input)` for native edge requests.
 It loads the owning model and returns an ephemeral sampled path
 `{ points, closed }` in CAD world mm (+Z up). The geometry remains owned by the
-source model. The first demonstration reads JSCAD named paths/solids from
-[jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504);
-STEP and glTF readers remain follow-up adapters.
+source model. In the first demonstration, the model names native features in its
+Fiber TSX: `<Custom name="outer_top" geometry={topPath} reference />`.
+`renderToJscadModel` collects those features with their full ancestor transforms;
+authors do not assemble a separate named-edge map. The corresponding
+[jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504)
+model constructor is a convenience over that same component. STEP and glTF
+readers remain follow-up adapters.
 
 A rounded 40mm tube has a real 34mm straight `outer_top` edge and a closed
 `outer_profile` spanning 40mm. Horizontal/vertical edge dimensions use all of a
@@ -223,3 +228,6 @@ and the opaque association in [Circuit JSON #922](https://github.com/tscircuit/c
 ![Overall dimensions of the rendered tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
 
 ![Rounded tube native edge and inferred width](tests/__snapshots__/view-extent-dimensions.snap.svg)
+
+The native Fiber naming and collection API is proposed in
+[jscad-fiber #142](https://github.com/tscircuit/jscad-fiber/pull/142).

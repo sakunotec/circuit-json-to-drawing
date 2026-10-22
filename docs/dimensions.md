@@ -60,42 +60,64 @@ named geometry metadata. There is no universal topology schema here, and mesh
 indices do not automatically become stable edge names. STEP and glTF reader
 adapters remain follow-up work.
 
-The first implementation uses JSCAD geometry from jscad-electronics:
+The JSCAD model names its native construction features in Fiber TSX. The geometry
+helper returns unnamed shapes; the component chooses stable feature names:
 
-```ts
-import {
-  createRectangularTubeModel,
-  listJscadNamedEdges,
-  readJscadNamedEdge,
-} from "jscad-electronics";
+```tsx
+import jscad from "@jscad/modeling";
+import { Custom } from "jscad-fiber/headless";
+import { renderToJscadModel } from "jscad-fiber/model";
+import { createRectangularTubeConstruction } from "jscad-electronics";
 
-const tube = createRectangularTubeModel({
-  width: 40,
-  height: 20,
-  wallThickness: 3,
-  length: 80,
-  outerRadius: 3,
-});
+function TubeModel() {
+  const {
+    solid,
+    outer: outerProfile,
+    topPath,
+  } = createRectangularTubeConstruction({
+    width: 40,
+    height: 20,
+    wallThickness: 3,
+    length: 80,
+    outerRadius: 3,
+    innerRadius: 1,
+  });
+  return (
+    <>
+      <Custom geometry={solid} />
+      <Custom name="outer_profile" geometry={outerProfile} reference />
+      {topPath && <Custom name="outer_top" geometry={topPath} reference />}
+    </>
+  );
+}
 
-// tube.geometry is the native Geom3 solid.
-// tube.namedEdges owns native Geom2/Path2 features such as outer_top/outer_profile.
-const names = listJscadNamedEdges(tube);
-const top = readJscadNamedEdge(tube, "outer_top");
-const profile = readJscadNamedEdge(tube, "outer_profile");
+const tube = renderToJscadModel(<TubeModel />, jscad);
 ```
 
-`createRectangularTubeModel` returns
-`{ geometry: Geom3, namedEdges: Record<string, Geom2 | Path2> }`.
-The readers operate on those model-owned objects. `outer_top` is the straight
-feature between rounded-corner tangencies, measuring `40 - 2 × 3 = 34`mm.
-`outer_profile` is the closed rounded contour spanning the actual 40mm width.
-No artificial 40mm envelope edge is created to make the feature length agree with
-the overall width.
+A `reference` marker names existing geometry and contributes no visible solid.
+`renderToJscadModel` returns `{ geometries, referenceFeatures }`: the first is the
+rendered native geometry, and each named reference contains `{ geometry, matrix }`.
+The native feature can be `Geom2`, `Path2`, or `Geom3`; `matrix` is its complete
+4×4 column-major ancestor transform in CAD mm, +Z up. Readers interpret the
+native type for their task. An edge reader can accept a planar path or profile
+and explicitly reject an unsupported solid reference.
 
-The JSCAD model and reader use model-local right-handed CAD XYZ in mm, +Z up.
+Names belong in the model's TSX, not in an author-built `namedEdges` map. The
+`createRectangularTubeModel(parameters)` convenience constructor renders the same
+registered `RectangularTube` component through this collector. The isolated
+`jscad-fiber/model` entry point needs no viewer. Native `Custom` geometry uses this
+collector; the pure JSON headless renderer reports unsupported native `Custom`
+geometry explicitly rather than silently discarding it.
+
+The model-aware reader samples the retained native geometry. `outer_top` is the
+straight feature between rounded-corner tangencies, measuring
+`40 - 2 × 3 = 34`mm. `outer_profile` is the closed rounded contour spanning the
+actual 40mm width. No artificial 40mm envelope edge is created.
+
 Modelprinter continues to own parameter strings, schemas, defaults, dimensions,
-and validation; it does not duplicate named edge geometry. Its earlier endpoint
-metadata proposal (#121) is superseded by model-native geometry ownership.
+and validation; it does not duplicate named feature geometry. The earlier
+modelprinter endpoint metadata proposal is superseded by names declared on
+native features in the model's TSX.
 
 ## Circuit JSON associations
 
@@ -106,7 +128,6 @@ An edge request records only the owning model and its opaque native name:
   type: "drawing_dimension",
   drawing_dimension_id: "end_top_feature",
   drawing_part_view_id: "end",
-  measurement: "edge",
   cad_component_id: "cad_tube",
   edge_name: "outer_top",
   orientation: "horizontal",
@@ -125,17 +146,20 @@ An inferred extent references only the part view:
   type: "drawing_dimension",
   drawing_dimension_id: "end_width",
   drawing_part_view_id: "end",
-  measurement: "view_width",
+  width_of_view: true,
   offset: 10,
   precision: 1,
 }
 ```
 
-`measurement` is `edge` (default), `view_width`, or `view_height`. Edge mode
-requires `cad_component_id` and `edge_name`; view presets forbid those fields.
-Presets normalize orientation to horizontal for width and vertical for height.
-Canonical Circuit JSON may retain the matching orientation; a conflicting one is
-invalid. Presets produce no named edge record.
+Select exactly one target: the complete `cad_component_id` + `edge_name` pair,
+`width_of_view: true`, or `height_of_view: true`. There is no target enum or
+default target. View flags forbid either edge-target field. False flags do not
+select a target and are omitted from canonical parsed output. Both true flags,
+mixed targets, incomplete owner/name pairs, and missing targets are errors.
+Orientation defaults to aligned for a model-edge reference, horizontal for width,
+and vertical for height. Canonical Circuit JSON accepts a matching explicit view
+orientation and rejects a conflicting one. No named edge record is produced.
 
 For an edge request, the owning CAD record must exist and its source component
 must belong to the view's selected source components/group. If both selection
@@ -151,13 +175,16 @@ or asynchronously. It resolves the owning model and samples that named geometry
 for projection:
 
 ```ts
+import { readJscadNamedEdge } from "jscad-electronics";
+
 const svg = await convertCircuitJsonToDrawingSvg(circuitJson, {
   resolveScene: () => tubeScene,
   resolveModelEdge: (dimension) => {
     if (dimension.cad_component_id !== "cad_tube") {
       throw new Error("The requested model is not loaded");
     }
-    // This example's model placement is identity, so local CAD points are world points.
+    // The reader applies each reference feature's complete Fiber matrix.
+    // This example's outer CAD-component placement is identity.
     return readJscadNamedEdge(tube, dimension.edge_name!);
   },
 });
@@ -167,8 +194,10 @@ The callback result is `{ points: readonly { x, y, z }[], closed: boolean }`.
 This is a temporary sampling adapter for renderer use, outside Circuit JSON;
 it is not the model's topology definition. Curves remain native to the model.
 The adapter must supply finite CAD world-space points in mm (+Z up) after the
-same instance scale, rotation, and translation used by the rendered model. It
-must report whether the path is closed. The exporter converts CAD points to
+same instance scale, rotation, and translation used by the rendered model.
+`readJscadNamedEdge` applies the full collected Fiber `matrix` to every sample;
+its caller then applies any outer CAD-component placement exactly once. The
+callback must report whether the path is closed. The exporter converts CAD points to
 glTF +Y-up for projection and does not reapply the model's placement. Cache model
 loading and native reader results in the caller when several dimensions share a
 model.
@@ -187,7 +216,7 @@ annotations remain future work.
   isometric view; its dimension line follows the projected edge.
 - `horizontal` and `vertical` measure the native geometry's span along the view's
   orthonormal right/up model axes, using all sampled points.
-- `view_width` and `view_height` measure the selected rendered geometry after
+- `width_of_view` and `height_of_view` measure the selected rendered geometry after
   model/world transforms. Section views use retained cut geometry. Viewport size,
   paper scale, and raster allocation do not supply the measured value.
 - `offset` defaults to 8 signed paper mm. Positive follows the left normal in
@@ -227,5 +256,8 @@ and [FreeCAD TechDraw length dimensions](https://github.com/FreeCAD/FreeCAD-docu
 These provide conventional drafting terminology; this implementation does not
 claim complete ISO/ASME drafting compliance.
 
-The native feature reader and its four-view model snapshot are proposed in
+The TSX-declared native features, reader, and four-view model snapshot are proposed in
 [jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504).
+
+The `Custom name/reference` declarations and native collector are proposed in
+[jscad-fiber #142](https://github.com/tscircuit/jscad-fiber/pull/142).

@@ -1,3 +1,4 @@
+import jscad from "@jscad/modeling"
 import {
   createRectangularTubeModel,
   listJscadNamedEdges,
@@ -10,9 +11,9 @@ import type {
 } from "circuit-json"
 import { cadScene } from "./models"
 
-/** The solid and named native JSCAD paths come from the same renderer model.
- * Placement is identity here, so the reader's model-local CAD mm (+Z up) also
- * serve as CAD world points. A placed instance must transform every sample.
+/** The solid and named native JSCAD paths come from the same Fiber component tree.
+ * The reader applies feature ancestry into model-root CAD mm (+Z up). Outer CAD
+ * placement is identity here; placed instances must also transform every sample.
  */
 export function rectangularTubeDrawing(
   width = 40,
@@ -28,7 +29,14 @@ export function rectangularTubeDrawing(
     length,
     outerRadius,
   })
-  const scene = cadScene(model.geometry)
+  const solid = model.geometries[0]
+  if (
+    model.geometries.length !== 1 ||
+    !solid ||
+    !jscad.geometries.geom3.isA(solid)
+  )
+    throw new Error("Expected the tube Fiber model to render exactly one solid")
+  const scene = cadScene(solid as jscad.geometries.geom3.Geom3)
   const page = {
     type: "drawing_page" as const,
     drawing_page_id: "tube_sheet",
@@ -83,21 +91,21 @@ export function rectangularTubeDrawing(
       type: "drawing_dimension",
       drawing_dimension_id: "end_view_width",
       drawing_part_view_id: "end",
-      measurement: "view_width",
+      width_of_view: true,
       offset: 10,
     },
     {
       type: "drawing_dimension",
       drawing_dimension_id: "end_view_height",
       drawing_part_view_id: "end",
-      measurement: "view_height",
+      height_of_view: true,
       offset: 10,
     },
     {
       type: "drawing_dimension",
       drawing_dimension_id: "side_view_height",
       drawing_part_view_id: "side",
-      measurement: "view_height",
+      height_of_view: true,
       offset: -10,
     },
   ]

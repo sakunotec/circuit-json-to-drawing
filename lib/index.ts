@@ -48,7 +48,7 @@ export async function convertCircuitJsonToDrawingPages(
     !options.resolveModelEdge &&
     dimensions.some(
       (dimension) =>
-        dimension.measurement === "edge" &&
+        dimension.edge_name !== undefined &&
         views.some(
           (view) =>
             view.drawing_part_view_id === dimension.drawing_part_view_id &&
@@ -142,7 +142,7 @@ export async function convertCircuitJsonToDrawingPages(
           dimension.drawing_part_view_id === view.drawing_part_view_id,
       )) {
         const reference =
-          dimension.measurement === "edge"
+          dimension.edge_name !== undefined
             ? referenceForModelEdge(
                 await options.resolveModelEdge!(dimension, view, input),
                 dimension,
