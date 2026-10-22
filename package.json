@@ -20,8 +20,9 @@
   },
   "dependencies": {
     "poppygl": "^0.0.37",
-    "circuit-json": "^0.0.532",
-    "@tscircuit/alphabet": "0.0.25"
+    "circuit-json": "https://pkg.pr.new/circuit-json@2627dea",
+    "@tscircuit/alphabet": "0.0.25",
+    "gl-matrix": "^3.4.4"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
@@ -29,7 +30,8 @@
     "typescript": "^5.9.3",
     "bun-match-svg": "^0.0.17",
     "@jscad/modeling": "2.13.0",
-    "fast-png": "^8.0.0"
+    "fast-png": "^8.0.0",
+    "@tscircuit/modelprinter": "https://pkg.pr.new/tscircuit/modelprinter/@tscircuit/modelprinter@434c2c7"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
@@ -39,4 +41,3 @@
     ".": "./lib/index.ts"
   }
 }
-

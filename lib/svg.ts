@@ -22,7 +22,7 @@ export function toBase64(bytes: Uint8Array): string {
 
 export function pageToSvg(
   page: DrawingPage,
-  views: { view: DrawingPartView; pngUrl: string }[],
+  views: { view: DrawingPartView; pngUrl: string; dimensionSvg?: string }[],
   titleBlock?: DrawingPageTitleBlock,
 ) {
   const title = escapeXml(
@@ -44,7 +44,10 @@ export function pageToSvg(
       return `<g data-drawing-part-view-id="${escapeXml(view.drawing_part_view_id)}"><title>${name}</title><clipPath id="viewport-${index}"><rect x="${x}" y="${y}" width="${view.width}" height="${view.height}"/></clipPath><image x="${x}" y="${y}" width="${view.width}" height="${view.height}" preserveAspectRatio="none" clip-path="url(#viewport-${index})" href="${pngUrl}"/><text x="${x + view.width / 2}" y="${y + view.height + 3.5}" text-anchor="middle" font-size="2.8">${name} · ${scale}</text></g>`
     })
     .join("")
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}mm" height="${page.height}mm" viewBox="0 0 ${page.width} ${page.height}" role="img" aria-label="${title}" style="font-family:monospace"><title>${title}</title><rect width="100%" height="100%" fill="white"/>${images}<rect x="2" y="2" width="${Math.max(0, page.width - 4)}" height="${Math.max(0, page.height - 4)}" fill="none" stroke="black" stroke-width="0.25"/>${titleBlock ? titleBlockToSvg(page, titleBlock) : ""}</svg>`
+  const dimensions = views
+    .map(({ dimensionSvg }) => dimensionSvg ?? "")
+    .join("")
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}mm" height="${page.height}mm" viewBox="0 0 ${page.width} ${page.height}" role="img" aria-label="${title}" style="font-family:monospace"><title>${title}</title><rect width="100%" height="100%" fill="white"/>${images}${dimensions}<rect x="2" y="2" width="${Math.max(0, page.width - 4)}" height="${Math.max(0, page.height - 4)}" fill="none" stroke="black" stroke-width="0.25"/>${titleBlock ? titleBlockToSvg(page, titleBlock) : ""}</svg>`
 }
 
 /** A compact bottom-right layout; fields reference ISO 7200, not a certified template. */

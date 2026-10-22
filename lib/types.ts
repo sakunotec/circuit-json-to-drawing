@@ -1,4 +1,6 @@
 import type {
+  CadNamedEdge,
+  DrawingDimensionInput,
   DrawingPage,
   DrawingPartView,
   DrawingPageTitleBlock,
@@ -10,6 +12,8 @@ export interface CircuitElementLike {
   [key: string]: unknown
 }
 export type DrawingDocument = readonly (
+  | CadNamedEdge
+  | DrawingDimensionInput
   | DrawingPage
   | DrawingPageTitleBlock
   | DrawingPartView

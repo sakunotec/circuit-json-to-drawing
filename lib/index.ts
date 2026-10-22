@@ -1,4 +1,5 @@
 import { computeWorldAABB, renderDrawCalls, encodePNG } from "poppygl"
+import { renderDrawingDimension } from "./dimensions"
 import { parseDrawingDocument } from "./document"
 import { getViewOrientation, sectionToGltf } from "./coordinates"
 import { pageToSvg, toBase64 } from "./svg"
@@ -30,7 +31,7 @@ export async function convertCircuitJsonToDrawingPages(
     throw new Error("supersampling must be a positive integer")
   if (!Number.isFinite(maxRasterPixels) || maxRasterPixels <= 0)
     throw new Error("maxRasterPixels must be finite and positive")
-  const { pages, views, titleBlocks } = parseDrawingDocument(
+  const { pages, views, titleBlocks, edges, dimensions } = parseDrawingDocument(
     input,
     options.drawingPageId,
   )
@@ -83,7 +84,7 @@ export async function convertCircuitJsonToDrawingPages(
       ) as [number, number, number]
       const width = Math.max(1, Math.round(view.width * pixelsPerMm)),
         height = Math.max(1, Math.round(view.height * pixelsPerMm))
-      const { bitmap } = renderDrawCalls(scene.drawCalls, {
+      const { bitmap, camera } = renderDrawCalls(scene.drawCalls, {
         renderStyle: "outline",
         projection: "orthographic",
         width,
@@ -99,7 +100,23 @@ export async function convertCircuitJsonToDrawingPages(
       })
       const png = await encodePNG(bitmap),
         pngUrl = `data:image/png;base64,${toBase64(png)}`
-      rendered.push({ view, pngUrl })
+      const dimensionSvg = dimensions
+        .filter(
+          (dimension) =>
+            dimension.drawing_part_view_id === view.drawing_part_view_id,
+        )
+        .map(
+          (dimension) =>
+            renderDrawingDimension(
+              dimension,
+              edges.get(dimension.cad_named_edge_id)!,
+              view,
+              page,
+              camera,
+            ).svg,
+        )
+        .join("")
+      rendered.push({ view, pngUrl, dimensionSvg })
     }
     output.push({
       drawingPageId: page.drawing_page_id,

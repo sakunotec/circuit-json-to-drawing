@@ -174,3 +174,19 @@ versioned tarballs without requiring consumer credentials. The release workflow
 runs tests and typechecking before publishing, and serializes releases to avoid
 version collisions. Versions are bumped explicitly in package.json; the workflow
 does not write repository contents or create version commits. No build or native runtime dependency is required.
+
+## Named-edge dimensions
+
+The proposed `drawing_dimension` and `cad_named_edge` records add geometry-derived
+linear measurements, extension lines and arrowheads to configured part views.
+[Dimension authoring, coordinates and examples](docs/dimensions.md) describe
+horizontal, vertical and aligned dimensions and the modelprinter metadata bridge.
+Core can later resolve `<assembly.drawing.dimension edgeRef="overall_width" />`
+inside a part view into these records.
+
+![Dimensioned rectangular stock tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
+
+This proposal consumes immutable previews from
+[Circuit JSON #922](https://github.com/tscircuit/circuit-json/pull/922) and
+[modelprinter #121](https://github.com/tscircuit/modelprinter/pull/121).
+The TSX intent is defined in [props #953](https://github.com/tscircuit/props/pull/953).

@@ -6,6 +6,7 @@ import {
   type DrawingPage,
   type DrawingPartView,
 } from "circuit-json"
+import { parseDrawingDimensions } from "./dimension-document"
 import type { DrawingDocument } from "./types"
 
 export function parseDrawingDocument(
@@ -82,7 +83,10 @@ export function parseDrawingDocument(
   }
   if (drawingPageId && !pageIds.has(drawingPageId))
     throw new Error(`Drawing page not found: ${drawingPageId}`)
+  const { edges, dimensions } = parseDrawingDimensions(input, views)
   return {
+    edges,
+    dimensions,
     pages: drawingPageId
       ? pages.filter((p) => p.drawing_page_id === drawingPageId)
       : pages,
