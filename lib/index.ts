@@ -1,4 +1,10 @@
-import { computeWorldAABB, renderDrawCalls, encodePNG } from "poppygl"
+import {
+  computeWorldAABB,
+  renderDrawCalls,
+  encodePNG,
+  createOutlineSection,
+} from "poppygl"
+import { inferViewDimensionReference } from "./view-dimension-reference"
 import { renderDrawingDimension } from "./dimensions"
 import { parseDrawingDocument } from "./document"
 import { getViewOrientation, sectionToGltf } from "./coordinates"
@@ -84,7 +90,20 @@ export async function convertCircuitJsonToDrawingPages(
       ) as [number, number, number]
       const width = Math.max(1, Math.round(view.width * pixelsPerMm)),
         height = Math.max(1, Math.round(view.height * pixelsPerMm))
-      const { bitmap, camera } = renderDrawCalls(scene.drawCalls, {
+      const renderedGeometry = view.section
+        ? createOutlineSection(scene.drawCalls, sectionToGltf(view.section))
+            .drawCalls
+        : scene.drawCalls
+      if (
+        !renderedGeometry.some(
+          (drawCall) =>
+            (drawCall.indices?.length ?? drawCall.positions.length / 3) > 0,
+        )
+      )
+        throw new Error(
+          `Part view ${view.drawing_part_view_id} has no retained geometry`,
+        )
+      const { bitmap, camera } = renderDrawCalls(renderedGeometry, {
         renderStyle: "outline",
         projection: "orthographic",
         width,
@@ -96,7 +115,6 @@ export async function convertCircuitJsonToDrawingPages(
         showHiddenEdges: view.show_hidden_edges ?? false,
         orthographicHeight:
           view.scale == null ? null : view.height / view.scale,
-        section: view.section ? sectionToGltf(view.section) : null,
       })
       const png = await encodePNG(bitmap),
         pngUrl = `data:image/png;base64,${toBase64(png)}`
@@ -109,7 +127,13 @@ export async function convertCircuitJsonToDrawingPages(
           (dimension) =>
             renderDrawingDimension(
               dimension,
-              edges.get(dimension.cad_named_edge_id)!,
+              dimension.measurement === "edge"
+                ? edges.get(dimension.cad_named_edge_id!)!
+                : inferViewDimensionReference(
+                    dimension,
+                    renderedGeometry,
+                    camera,
+                  ),
               view,
               page,
               camera,

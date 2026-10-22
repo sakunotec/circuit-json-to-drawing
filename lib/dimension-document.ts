@@ -10,7 +10,7 @@ import {
 import type { DrawingDocument } from "./types"
 
 /** Parse analytic reference segments once, before scene loading. They are authored
- * CAD world-space reference edges/datums, not mesh indices or a B-rep edge registry.
+ * model-defined edges in CAD world space, not mesh indices or a B-rep edge registry.
  */
 export function parseDrawingDimensions(
   input: DrawingDocument,
@@ -97,7 +97,8 @@ export function parseDrawingDimensions(
     )
     if (!view)
       throw new Error("Drawing dimension references a missing part view")
-    const edge = edges.get(dimension.cad_named_edge_id)
+    if (dimension.measurement !== "edge") continue
+    const edge = edges.get(dimension.cad_named_edge_id!)
     if (!edge)
       throw new Error(
         `Dimension in view "${view.name ?? "unnamed view"}" references a missing named edge`,

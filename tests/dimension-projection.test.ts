@@ -14,7 +14,11 @@ import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 test("dimension values stay in model mm while geometry follows view scale and CAD placement", async () => {
   const fixture = rectangularTubeDrawing()
   const edge = cad_named_edge.parse(fixture.edges[0])
-  const dimension = drawing_dimension.parse(fixture.dimensions[0])
+  const dimension = drawing_dimension.parse({
+    ...fixture.dimensions[0],
+    measurement: "edge",
+    cad_named_edge_id: edge.cad_named_edge_id,
+  })
   const views: DrawingPartView[] = [1, 0.5].map((scale, index) => ({
     ...fixture.views[0]!,
     drawing_part_view_id: `scale_${scale}`,
@@ -124,7 +128,7 @@ test("dimension values stay in model mm while geometry follows view scale and CA
     ),
     ...views,
     ...views.map((view, i) => ({
-      ...fixture.dimensions[0]!,
+      ...dimension,
       orientation: "aligned" as const,
       drawing_dimension_id: `width_${i}`,
       drawing_part_view_id: view.drawing_part_view_id,

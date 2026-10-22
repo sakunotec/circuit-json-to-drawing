@@ -10,6 +10,10 @@ import { cadToGltf } from "./coordinates"
 import { escapeXml } from "./svg"
 
 type Point2 = { x: number; y: number }
+export type DrawingReferenceSegment = Pick<
+  CadNamedEdge,
+  "name" | "start" | "end"
+>
 
 /** Project CAD world-space points (right-handed mm, +Z up) through the exact
  * glTF (+Y-up) camera used for the view raster, into page-centered paper mm
@@ -22,9 +26,9 @@ export function projectDrawingPoint(
 ): Point2 {
   const [x, y, z] = cadToGltf([point.x, point.y, point.z])
   const clip = vec4.transformMat4(
-    vec4.create(),
+    new Float64Array(4),
     [x, y, z, 1],
-    mat4.multiply(mat4.create(), camera.proj, camera.view),
+    mat4.multiply(new Float64Array(16), camera.proj, camera.view),
   )
   if (![...clip].every(Number.isFinite) || Math.abs(clip[3]!) < 1e-12)
     throw new Error(
@@ -40,7 +44,7 @@ export function projectDrawingPoint(
  * use the camera's orthonormal right/up directions, before paper projection.
  */
 export function measureDrawingEdge(
-  edge: CadNamedEdge,
+  edge: DrawingReferenceSegment,
   dimension: DrawingDimension,
   camera: Camera,
 ) {
@@ -51,7 +55,7 @@ export function measureDrawingEdge(
   ])
   if (dimension.orientation === "aligned") return Math.hypot(...delta)
   const cameraDelta = vec4.transformMat4(
-    vec4.create(),
+    new Float64Array(4),
     [...delta, 0],
     camera.view,
   )
@@ -65,7 +69,7 @@ export function measureDrawingEdge(
  */
 export function renderDrawingDimension(
   dimension: DrawingDimension,
-  edge: CadNamedEdge,
+  edge: DrawingReferenceSegment,
   view: DrawingPartView,
   page: DrawingPage,
   camera: Camera,
@@ -86,11 +90,11 @@ export function renderDrawingDimension(
     )
   )
     throw new Error(
-      `Named edge "${edge.name}" exceeds finite drawing coordinates`,
+      `Drawing reference "${edge.name}" exceeds finite drawing coordinates`,
     )
   if (projectedLength < 1e-6 || value < 1e-6)
     throw new Error(
-      `Named edge "${edge.name}" has no measurable ${dimension.orientation} extent in view "${view.name ?? "unnamed view"}"`,
+      `Drawing reference "${edge.name}" has no measurable ${dimension.orientation} extent in view "${view.name ?? "unnamed view"}"`,
     )
   const tangent =
     dimension.orientation === "horizontal"
@@ -168,7 +172,7 @@ export function renderDrawingDimension(
     )
   )
     throw new Error(
-      `Named edge "${edge.name}" exceeds finite drawing coordinates`,
+      `Drawing reference "${edge.name}" exceeds finite drawing coordinates`,
     )
   if (
     paperPoints.some(
@@ -178,7 +182,7 @@ export function renderDrawingDimension(
     )
   )
     throw new Error(
-      `Dimension of named edge "${edge.name}" extends outside its drawing page`,
+      `Dimension of "${edge.name}" extends outside its drawing page`,
     )
   const svgPoint = (point: Point2) => ({
     x: page.width / 2 + point.x,

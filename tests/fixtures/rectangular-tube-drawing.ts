@@ -1,4 +1,4 @@
-import { booleans, primitives } from "@jscad/modeling"
+import { booleans, primitives, extrusions } from "@jscad/modeling"
 import { mp } from "@tscircuit/modelprinter"
 import type {
   CadNamedEdgeInput,
@@ -16,22 +16,27 @@ export function rectangularTubeDrawing(
   height = 20,
   wall = 3,
   length = 80,
+  outerRadius = 0,
 ) {
   const metadata = mp
     .string(
-      `rectangulartube_w${width}mm_h${height}mm_wall${wall}mm_l${length}mm`,
+      `rectangulartube_w${width}mm_h${height}mm_wall${wall}mm_l${length}mm_outerr${outerRadius}mm`,
     )
     .drawing()!
+  const crossSection = outerRadius
+    ? primitives.roundedRectangle({
+        size: [width, height],
+        roundRadius: outerRadius,
+        segments: 32,
+      })
+    : primitives.rectangle({ size: [width, height] })
   const scene = cadScene(
-    booleans.subtract(
-      primitives.cuboid({
-        size: [width, height, length],
-        center: [0, 0, length / 2],
-      }),
-      primitives.cuboid({
-        size: [width - 2 * wall, height - 2 * wall, length + 2],
-        center: [0, 0, length / 2],
-      }),
+    extrusions.extrudeLinear(
+      { height: length },
+      booleans.subtract(
+        crossSection,
+        primitives.rectangle({ size: [width - 2 * wall, height - 2 * wall] }),
+      ),
     ),
   )
   const page = {
@@ -90,20 +95,23 @@ export function rectangularTubeDrawing(
     },
   ]
   const dimensions: DrawingDimensionInput[] = metadata.views.flatMap((view) =>
-    view.dimensions
-      // State width once, on the end profile. Avoid redundant manufacturing dimensions.
-      .filter(
-        (dimension) =>
-          view.name !== "side" || dimension.edgeRef === "overall_length",
-      )
-      .map(({ edgeRef, ...dimension }) => ({
-        type: "drawing_dimension" as const,
-        drawing_dimension_id: `${view.name}_${edgeRef}`,
-        drawing_part_view_id: view.name,
-        cad_named_edge_id: `edge_${edgeRef}`,
-        ...dimension,
-        ...(edgeRef === "wall_thickness" ? { offset: -50 } : {}),
-      })),
+    view.dimensions.map(
+      ({ edgeRef, widthOfView, heightOfView, ...dimension }) => {
+        const measurement = widthOfView
+          ? "view_width"
+          : heightOfView
+            ? "view_height"
+            : "edge"
+        return {
+          type: "drawing_dimension" as const,
+          drawing_dimension_id: `${view.name}_${edgeRef ?? measurement}`,
+          drawing_part_view_id: view.name,
+          measurement,
+          ...(edgeRef ? { cad_named_edge_id: `edge_${edgeRef.slice(1)}` } : {}),
+          ...dimension,
+        }
+      },
+    ),
   )
   const block = {
     type: "drawing_page_title_block",

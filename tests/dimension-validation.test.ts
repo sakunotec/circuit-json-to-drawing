@@ -9,9 +9,20 @@ import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 
 test("dimensions reject broken ownership and unusable projections before producing invalid SVG", async () => {
   const fixture = rectangularTubeDrawing()
+  const edgeDimension = {
+    ...fixture.dimensions[0]!,
+    drawing_dimension_id: "explicit_outer_top",
+    measurement: "edge" as const,
+    cad_named_edge_id: fixture.edges[0]!.cad_named_edge_id,
+  }
+  const inputWithEdge = [...fixture.input, edgeDimension]
   const patchDimension = (patch: object) =>
-    fixture.input.map((record) =>
-      record.type === "drawing_dimension" ? { ...record, ...patch } : record,
+    inputWithEdge.map((record) =>
+      record.type === "drawing_dimension" &&
+      "drawing_dimension_id" in record &&
+      record.drawing_dimension_id === "explicit_outer_top"
+        ? { ...record, ...patch }
+        : record,
     )
   const invalid: DrawingDocument[] = [
     patchDimension({ drawing_part_view_id: "missing" }),
@@ -30,12 +41,12 @@ test("dimensions reject broken ownership and unusable projections before produci
       },
     ],
     fixture.input.filter((record) => record.type !== "cad_component"),
-    fixture.input.map((record) =>
+    inputWithEdge.map((record) =>
       record.type === "drawing_part_view"
         ? { ...record, source_component_ids: ["foreign_part"] }
         : record,
     ),
-    fixture.input.map((record) =>
+    inputWithEdge.map((record) =>
       record.type === "drawing_part_view"
         ? { ...record, source_group_id: "foreign_group" }
         : record,
@@ -68,7 +79,7 @@ test("dimensions reject broken ownership and unusable projections before produci
     center: { x: 0, y: 0 },
   }
   const edge = cad_named_edge.parse(fixture.edges[0]),
-    dimension = drawing_dimension.parse(fixture.dimensions[0])
+    dimension = drawing_dimension.parse(edgeDimension)
   const zero = renderDrawingDimension(
     { ...dimension, offset: 0 },
     edge,
@@ -113,7 +124,7 @@ test("dimensions reject broken ownership and unusable projections before produci
   const hugeEdge = { ...edge, end: { x: 1e300, y: 0, z: 0 } }
   expect(() =>
     renderDrawingDimension(dimension, hugeEdge, view, fixture.page, camera),
-  ).toThrow("finite")
+  ).toThrow("outside")
   const shortEdge = {
     ...edge,
     start: { x: 0, y: 0, z: 0 },

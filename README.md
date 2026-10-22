@@ -12,7 +12,7 @@ hidden edges and hatched section cuts.
 URLs, embedded images, or generated output elements.
 
 ```ts
-import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing"
+import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing";
 
 const circuitJson = [
   {
@@ -44,16 +44,16 @@ const circuitJson = [
     height: 90,
     section: { axis: "x", offset: 5, keep_side: "less", hatch_spacing: 1 },
   },
-] as const
+] as const;
 
 const svg = await convertCircuitJsonToDrawingSvg(circuitJson, {
   resolveScene: async (partView, elements) => {
     // Use your circuit-to-glTF pipeline to resolve the geometry selected by
     // partView.source_group_id / source_component_ids from elements.
-    return getSelectedPartScene(partView, elements)
+    return getSelectedPartScene(partView, elements);
   },
-})
-await Bun.write("drawing.svg", svg)
+});
+await Bun.write("drawing.svg", svg);
 ```
 
 `resolveScene` is called for each part view and returns a PoppyGL `GLTFScene` in
@@ -66,11 +66,13 @@ selectors must be resolved to source IDs by core; core emission is follow-up wor
 ## Multiple pages
 
 ```ts
-import { convertCircuitJsonToDrawingPages } from "@tscircuit/circuit-json-to-drawing"
+import { convertCircuitJsonToDrawingPages } from "@tscircuit/circuit-json-to-drawing";
 
-const pages = await convertCircuitJsonToDrawingPages(circuitJson, { resolveScene })
+const pages = await convertCircuitJsonToDrawingPages(circuitJson, {
+  resolveScene,
+});
 for (const page of pages) {
-  await Bun.write(`${page.drawingPageId}.svg`, page.svg)
+  await Bun.write(`${page.drawingPageId}.svg`, page.svg);
 }
 ```
 
@@ -106,13 +108,13 @@ for the title block.
 
 ## Options
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `drawingPageId` | all pages | Select a configured page |
-| `pixelsPerMm` | 4 | Positive finite view raster resolution; does not change physical scale |
-| `supersampling` | 2 | Positive integer antialiasing factor |
-| `maxRasterPixels` | 16,000,000 | Supersampled pixel limit per view, checked before scene resolution |
-| `resolveScene` | required to render | Resolve configured part geometry into a PoppyGL scene |
+| Option            | Default            | Meaning                                                                |
+| ----------------- | ------------------ | ---------------------------------------------------------------------- |
+| `drawingPageId`   | all pages          | Select a configured page                                               |
+| `pixelsPerMm`     | 4                  | Positive finite view raster resolution; does not change physical scale |
+| `supersampling`   | 2                  | Positive integer antialiasing factor                                   |
+| `maxRasterPixels` | 16,000,000         | Supersampled pixel limit per view, checked before scene resolution     |
+| `resolveScene`    | required to render | Resolve configured part geometry into a PoppyGL scene                  |
 
 ## Install and development
 
@@ -131,10 +133,10 @@ check workflows. Public imports have no native rasterizer dependency; visual tes
 rasterization is dev-only. Preview dependency pins are temporary until upstream
 schema and packaging PRs are released.
 
-Seven test files contain one test and one visual SVG snapshot each. They cover
+Twelve test files contain one test and one visual SVG snapshot each. They cover
 caller-supplied GLB geometry without drawing image fields, independent part
 selections, multiple pages, six axis directions, hidden edges, section planes,
-physical scale/clipping and configuration validation.
+physical scale/clipping, dimensions and configuration validation.
 
 Schema: https://github.com/tscircuit/circuit-json/pull/918
 
@@ -166,7 +168,7 @@ bun add -D https://jscdn.tscircuit.com/@tscircuit/circuit-json-to-drawing/0.0.2.
 ```
 
 ```ts
-import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing"
+import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing";
 ```
 
 Releases publish the source-only package to GitHub Packages; jscdn serves the
@@ -175,16 +177,45 @@ runs tests and typechecking before publishing, and serializes releases to avoid
 version collisions. Versions are bumped explicitly in package.json; the workflow
 does not write repository contents or create version commits. No build or native runtime dependency is required.
 
-## Named-edge dimensions
+## Geometry-derived linear dimensions
 
-The proposed `drawing_dimension` and `cad_named_edge` records add geometry-derived
-linear measurements, extension lines and arrowheads to configured part views.
-[Dimension authoring, coordinates and examples](docs/dimensions.md) describe
-horizontal, vertical and aligned dimensions and the modelprinter metadata bridge.
-Core can later resolve `<assembly.drawing.dimension edgeRef="overall_width" />`
-inside a part view into these records.
+The proposed `drawing_dimension` record distinguishes an actual model-defined
+edge from explicit inferred view extents. Conventional linear annotations add
+extension lines, arrowheads, and geometry-derived labels to part views:
+
+```tsx
+<assembly.drawing.partview
+  partRef=".tube"
+  name="end"
+  direction="z+"
+  width="90mm"
+  height="90mm"
+>
+  <assembly.drawing.dimension widthOfView offset="10mm" />
+  <assembly.drawing.dimension heightOfView offset="10mm" />
+</assembly.drawing.partview>
+```
+
+A feature dimension instead uses a selector for an edge authored by that model,
+for example `<assembly.drawing.dimension edgeRef=".tube > .outer_top" />`.
+An arbitrary `overall_width` name is not a bounds request. In Circuit JSON,
+`measurement: "edge"` requires `cad_named_edge_id`; `view_width` and `view_height`
+reference only the part view and never fabricate named envelope edges.
+
+Presets measure selected rendered geometry in camera model axes after transforms
+and section cuts. Labels are model mm, independent of viewport paper size,
+auto-fit, or explicit drawing scale. The sharp 40 × 20 × 80 mm stock-tube example
+shows exactly three inferred overall dimensions: 40.0, 20.0, and 80.0. With a
+3 mm outer corner radius, the actual `outer_top` straight edge is 34 mm long,
+while the end-view width remains 40 mm. The rounded example shows that distinction.
+
+[Dimension authoring, coordinates and examples](docs/dimensions.md) covers the
+TSX intent, modelprinter metadata, measurement records, and layout semantics.
+Core selector resolution and dimension emission remain future integration work.
 
 ![Dimensioned rectangular stock tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
+
+![Model-defined top edge versus inferred width on a rounded tube](tests/__snapshots__/view-extent-dimensions.snap.svg)
 
 This proposal consumes immutable previews from
 [Circuit JSON #922](https://github.com/tscircuit/circuit-json/pull/922) and
