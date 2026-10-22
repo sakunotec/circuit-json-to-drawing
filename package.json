@@ -31,7 +31,7 @@
     "bun-match-svg": "^0.0.17",
     "@jscad/modeling": "2.13.0",
     "fast-png": "^8.0.0",
-    "jscad-electronics": "https://pkg.pr.new/tscircuit/jscad-electronics@008ae02"
+    "jscad-electronics": "https://pkg.pr.new/tscircuit/jscad-electronics@f88da44"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
