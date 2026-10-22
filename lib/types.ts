@@ -1,4 +1,8 @@
-import type { DrawingPage, DrawingPartView } from "circuit-json"
+import type {
+  DrawingPage,
+  DrawingPartView,
+  DrawingPageTitleBlock,
+} from "circuit-json"
 import type { GLTFScene } from "poppygl"
 
 export interface CircuitElementLike {
@@ -7,6 +11,7 @@ export interface CircuitElementLike {
 }
 export type DrawingDocument = readonly (
   | DrawingPage
+  | DrawingPageTitleBlock
   | DrawingPartView
   | CircuitElementLike
 )[]

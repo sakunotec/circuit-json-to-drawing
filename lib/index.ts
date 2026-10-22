@@ -30,7 +30,10 @@ export async function convertCircuitJsonToDrawingPages(
     throw new Error("supersampling must be a positive integer")
   if (!Number.isFinite(maxRasterPixels) || maxRasterPixels <= 0)
     throw new Error("maxRasterPixels must be finite and positive")
-  const { pages, views } = parseDrawingDocument(input, options.drawingPageId)
+  const { pages, views, titleBlocks } = parseDrawingDocument(
+    input,
+    options.drawingPageId,
+  )
   // Validate allocation limits before starting network or scene work.
   for (const view of views.filter((v) =>
     pages.some((s) => s.drawing_page_id === v.drawing_page_id),
@@ -100,7 +103,13 @@ export async function convertCircuitJsonToDrawingPages(
     }
     output.push({
       drawingPageId: page.drawing_page_id,
-      svg: pageToSvg(page, rendered),
+      svg: pageToSvg(
+        page,
+        rendered,
+        titleBlocks.find(
+          (block) => block.drawing_page_id === page.drawing_page_id,
+        ),
+      ),
     })
   }
   return output
