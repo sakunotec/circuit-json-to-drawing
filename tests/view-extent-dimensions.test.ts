@@ -9,35 +9,55 @@ import { measureDrawingEdge, renderDrawingDimension } from "../lib/dimensions"
 import { referenceForModelEdge } from "../lib/model-edge-reference"
 import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 
-test("model-defined straight edges and inferred view extents remain distinct on rounded and sectioned geometry", async () => {
+test("named extrusion outlines distinguish bore and outside dimensions on rounded and sectioned tubes", async () => {
   const fixture = rectangularTubeDrawing(40, 20, 3, 80, 3)
-  const edge = fixture.readEdge("outer_top")
-  const topPoints = [...edge.points].sort((a, b) => a.x - b.x)
-  expect(topPoints[0]!.x).toBeCloseTo(-17, 5)
-  expect(topPoints.at(-1)!.x).toBeCloseTo(17, 5)
-  expect(edge.closed).toBe(false)
-  const profile = fixture.readEdge("outer_profile")
-  expect(profile.closed).toBe(true)
-  expect(profile.points.length).toBeGreaterThan(8)
+  const bore = fixture.readEdge("inner_top")
+  const borePoints = [...bore.points].sort((a, b) => a.x - b.x)
+  expect(borePoints[0]!.x).toBeCloseTo(-17, 5)
+  expect(borePoints.at(-1)!.x).toBeCloseTo(17, 5)
+  expect(bore.closed).toBe(true)
+  expect(bore.points.every((point) => Math.abs(point.z - 80) < 1e-6)).toBe(true)
+  const outside = fixture.readEdge("outer_top")
+  expect(outside.closed).toBe(true)
+  expect(outside.points.length).toBeGreaterThan(8)
+  expect(outside.points.every((point) => Math.abs(point.z - 80) < 1e-6)).toBe(
+    true,
+  )
+  expect(
+    fixture
+      .readEdge("outer_bottom")
+      .points.every((point) => Math.abs(point.z) < 1e-6),
+  ).toBe(true)
+  expect(
+    fixture
+      .readEdge("inner_bottom")
+      .points.every((point) => Math.abs(point.z) < 1e-6),
+  ).toBe(true)
   const input = [
-    ...fixture.input,
+    ...fixture.input.map((record) =>
+      record.type === "drawing_dimension" &&
+      "drawing_dimension_id" in record &&
+      record.drawing_dimension_id === "end_view_width"
+        ? { ...record, offset: 23 }
+        : record,
+    ),
     {
       type: "drawing_dimension" as const,
-      drawing_dimension_id: "actual_top_edge",
+      drawing_dimension_id: "bore_width",
       drawing_part_view_id: "end",
       cad_component_id: fixture.cad.cad_component_id,
-      edge_name: "outer_top",
-      name: "Model-defined outer_top",
+      edge_name: "inner_top",
+      name: "Bore width from inner top outline",
       orientation: "horizontal" as const,
-      offset: 23,
+      offset: 10,
     },
     {
       type: "drawing_dimension" as const,
-      drawing_dimension_id: "native_closed_profile",
+      drawing_dimension_id: "outside_outline_width",
       drawing_part_view_id: "end",
       cad_component_id: fixture.cad.cad_component_id,
-      edge_name: "outer_profile",
-      name: "Native JSCAD rounded contour",
+      edge_name: "outer_top",
+      name: "Outside width from outer top outline",
       orientation: "horizontal" as const,
       offset: -10,
     },
@@ -59,9 +79,9 @@ test("model-defined straight edges and inferred view extents remain distinct on 
       )?.[1],
     )
   const svg = await render()
-  expect(measured(svg, "actual_top_edge")).toBeCloseTo(34, 3)
+  expect(measured(svg, "bore_width")).toBeCloseTo(34, 3)
   expect(measured(svg, "end_view_width")).toBeCloseTo(40, 3)
-  expect(measured(svg, "native_closed_profile")).toBeCloseTo(40, 3)
+  expect(measured(svg, "outside_outline_width")).toBeCloseTo(40, 3)
   expect(svg).toContain("34.0</text>")
   expect(svg).toContain("40.0</text>")
   expect(
@@ -70,15 +90,15 @@ test("model-defined straight edges and inferred view extents remain distinct on 
     ),
   ).toBe(true)
   expect([...fixture.edgeNames].sort()).toEqual([
-    "inner_profile",
-    "outer_left",
-    "outer_profile",
+    "inner_bottom",
+    "inner_top",
+    "outer_bottom",
     "outer_top",
   ])
   const curvedAligned = input.map((record) =>
     record.type === "drawing_dimension" &&
     "drawing_dimension_id" in record &&
-    record.drawing_dimension_id === "native_closed_profile"
+    record.drawing_dimension_id === "outside_outline_width"
       ? { ...record, orientation: "aligned" as const }
       : record,
   )
@@ -104,7 +124,7 @@ test("model-defined straight edges and inferred view extents remain distinct on 
   )
   const scaledSvg = await render(scaled)
   expect(measured(scaledSvg, "end_view_width")).toBeCloseTo(40, 3)
-  expect(measured(scaledSvg, "actual_top_edge")).toBeCloseTo(34, 3)
+  expect(measured(scaledSvg, "bore_width")).toBeCloseTo(34, 3)
   const emptySection = input.map((record) =>
     record.type === "drawing_part_view"
       ? {
@@ -253,7 +273,7 @@ test("model-defined straight edges and inferred view extents remain distinct on 
         !(
           record.type === "drawing_dimension" &&
           "drawing_dimension_id" in record &&
-          record.drawing_dimension_id === "native_closed_profile"
+          record.drawing_dimension_id === "outside_outline_width"
         ),
     ),
   )

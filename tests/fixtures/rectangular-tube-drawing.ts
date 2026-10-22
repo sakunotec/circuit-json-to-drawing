@@ -1,6 +1,7 @@
 import jscad from "@jscad/modeling"
 import {
   createRectangularTubeModel,
+  geom3ToIndexedMesh,
   listJscadNamedEdges,
   readJscadNamedEdge,
 } from "jscad-electronics/vanilla"
@@ -9,7 +10,9 @@ import type {
   DrawingDimensionInput,
   DrawingPartView,
 } from "circuit-json"
-import { cadScene } from "./models"
+import { cadToGltf } from "../../lib"
+import { mat4 } from "gl-matrix"
+import type { GLTFScene } from "poppygl"
 
 /** The solid and named native JSCAD paths come from the same Fiber component tree.
  * The reader applies feature ancestry into model-root CAD mm (+Z up). Outer CAD
@@ -36,7 +39,32 @@ export function rectangularTubeDrawing(
     !jscad.geometries.geom3.isA(solid)
   )
     throw new Error("Expected the tube Fiber model to render exactly one solid")
-  const scene = cadScene(solid as jscad.geometries.geom3.Geom3)
+  const mesh = geom3ToIndexedMesh(solid as jscad.geometries.geom3.Geom3)
+  const positions: number[] = []
+  for (let i = 0; i < mesh.positions.length; i += 3)
+    positions.push(
+      ...cadToGltf([
+        mesh.positions[i]!,
+        mesh.positions[i + 1]!,
+        mesh.positions[i + 2]!,
+      ]),
+    )
+  const scene: GLTFScene = {
+    gltf: { asset: { version: "2.0" } },
+    drawCalls: [
+      {
+        positions: new Float32Array(positions),
+        indices: new Uint32Array(mesh.indices),
+        normals: null,
+        uvs: null,
+        model: mat4.create(),
+        material: {
+          baseColorFactor: [0.1, 0.4, 0.8, 1],
+          baseColorTexture: null,
+        },
+      },
+    ],
+  }
   const page = {
     type: "drawing_page" as const,
     drawing_page_id: "tube_sheet",

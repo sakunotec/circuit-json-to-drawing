@@ -194,7 +194,11 @@ arrowheads, and geometry-derived labels:
 >
   <assembly.drawing.dimension widthOfView offset="10mm" />
   <assembly.drawing.dimension heightOfView offset="10mm" />
-  <assembly.drawing.dimension edgeRef=".tube > .outer_top" offset="23mm" />
+  <assembly.drawing.dimension
+    edgeRef=".tube > .inner_top"
+    orientation="horizontal"
+    offset="23mm"
+  />
 </assembly.drawing.partview>
 ```
 
@@ -208,17 +212,29 @@ topology schema.
 Callers supply `resolveModelEdge(dimension, view, input)` for native edge requests.
 It loads the owning model and returns an ephemeral sampled path
 `{ points, closed }` in CAD world mm (+Z up). The geometry remains owned by the
-source model. In the first demonstration, the model names native features in its
-Fiber TSX: `<Custom name="outer_top" geometry={topPath} reference />`.
-`renderToJscadModel` collects those features with their full ancestor transforms;
-authors do not assemble a separate named-edge map. The corresponding
+source model. The model names outlines directly on its construction operations:
+
+```tsx
+<ExtrudeLinear
+  height={80}
+  topOutlineName="outer_top"
+  bottomOutlineName="outer_bottom"
+>
+  <Rectangle size={[40, 20]} />
+</ExtrudeLinear>
+```
+
+`renderToJscadModel` collects each outline's native profile and cap placement.
+Parent transforms compose into its complete matrix. Authors do not assemble a
+separate named-edge map. The corresponding
 [jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504)
 model constructor is a convenience over that same component. STEP and glTF
 readers remain follow-up adapters.
 
-A rounded 40mm tube has a real 34mm straight `outer_top` edge and a closed
-`outer_profile` spanning 40mm. Horizontal/vertical edge dimensions use all of a
-native path's points; they do not reduce curves to an endpoint chord. The initial
+The tube names the outer and inner extrusion outlines separately. With a
+40mm width and 3mm walls, `outer_top` spans 40mm and `inner_top` spans the 34mm
+bore. Both are complete closed end contours. Horizontal/vertical edge dimensions
+use all of a native path's points; they do not reduce curves to an endpoint chord. The initial
 aligned mode supports straight open edges and rejects unsupported curves.
 
 See [the dimension contract and model-reader example](docs/dimensions.md).
@@ -227,7 +243,7 @@ and the opaque association in [Circuit JSON #922](https://github.com/tscircuit/c
 
 ![Overall dimensions of the rendered tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
 
-![Rounded tube native edge and inferred width](tests/__snapshots__/view-extent-dimensions.snap.svg)
+![Rounded tube outer and bore dimensions](tests/__snapshots__/view-extent-dimensions.snap.svg)
 
 The native Fiber naming and collection API is proposed in
 [jscad-fiber #142](https://github.com/tscircuit/jscad-fiber/pull/142).

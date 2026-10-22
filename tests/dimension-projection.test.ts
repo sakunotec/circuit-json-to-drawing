@@ -11,11 +11,11 @@ import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 test("dimension values stay in model mm while geometry follows view scale and CAD placement", async () => {
   const fixture = rectangularTubeDrawing()
   const nativeEdge = fixture.readEdge("outer_top")
-  const points = [...nativeEdge.points].sort((a, b) => a.x - b.x)
-  const edge = { name: "outer_top", start: points[0]!, end: points.at(-1)! }
+  const points = nativeEdge.points
   const dimension = drawing_dimension.parse({
     type: "drawing_dimension",
-    drawing_dimension_id: "top_edge",
+    drawing_dimension_id: "outer_top_width",
+    orientation: "horizontal",
     drawing_part_view_id: "end",
     offset: 10,
     cad_component_id: fixture.cad.cad_component_id,
@@ -40,6 +40,7 @@ test("dimension values stay in model mm while geometry follows view scale and CA
       lookAt: [0, 40, 0],
       up: "z-",
     })
+    const edge = referenceForModelEdge(nativeEdge, dimension, camera)
     const start = projectDrawingPoint(edge.start, view, camera),
       end = projectDrawingPoint(edge.end, view, camera)
     expect(end.x - start.x).toBeCloseTo(40 * view.scale!, 5)
@@ -121,17 +122,29 @@ test("dimension values stay in model mm while geometry follows view scale and CA
       camPos: [200, 240, -200],
       lookAt: [0, 40, 0],
     }).camera
+    // A standalone straight path exercises aligned distance independently of
+    // the tube's closed extrusion outlines, which have no linear endpoints.
+    const aligned = {
+      ...dimension,
+      orientation: "aligned" as const,
+      edge_name: "runtime_straight",
+    }
+    const line = referenceForModelEdge(
+      {
+        points: [
+          { x: -20, y: 10, z: 0 },
+          { x: 20, y: 10, z: 0 },
+        ],
+        closed: false,
+      },
+      aligned,
+      isoCamera,
+    )
+    expect(measureDrawingEdge(line, aligned, isoCamera)).toBe(40)
     expect(
       measureDrawingEdge(
-        edge,
-        { ...dimension, orientation: "aligned" },
-        isoCamera,
-      ),
-    ).toBe(40)
-    expect(
-      measureDrawingEdge(
-        edge,
-        { ...dimension, orientation: "horizontal" },
+        line,
+        { ...aligned, orientation: "horizontal" },
         isoCamera,
       ),
     ).toBeLessThan(40)
@@ -145,7 +158,7 @@ test("dimension values stay in model mm while geometry follows view scale and CA
     ...views,
     ...views.map((view, i) => ({
       ...dimension,
-      orientation: "aligned" as const,
+      orientation: "horizontal" as const,
       drawing_dimension_id: `width_${i}`,
       drawing_part_view_id: view.drawing_part_view_id,
     })),

@@ -36,7 +36,7 @@ For a particular feature, reference a named edge actually provided by the model:
 >
   <assembly.drawing.dimension widthOfView offset="10mm" />
   <assembly.drawing.dimension
-    edgeRef=".tube > .outer_top"
+    edgeRef=".tube > .inner_top"
     orientation="horizontal"
     offset="23mm"
   />
@@ -60,59 +60,65 @@ named geometry metadata. There is no universal topology schema here, and mesh
 indices do not automatically become stable edge names. STEP and glTF reader
 adapters remain follow-up work.
 
-The JSCAD model names its native construction features in Fiber TSX. The geometry
-helper returns unnamed shapes; the component chooses stable feature names:
+The model names references directly on its Fiber construction operations. For
+example, the tube's outer and inner extrusions can name their end outlines:
 
 ```tsx
 import jscad from "@jscad/modeling";
-import { Custom } from "jscad-fiber/headless";
+import { ExtrudeLinear, Rectangle, Subtract } from "jscad-fiber/headless";
 import { renderToJscadModel } from "jscad-fiber/model";
-import { createRectangularTubeConstruction } from "jscad-electronics";
 
 function TubeModel() {
-  const {
-    solid,
-    outer: outerProfile,
-    topPath,
-  } = createRectangularTubeConstruction({
-    width: 40,
-    height: 20,
-    wallThickness: 3,
-    length: 80,
-    outerRadius: 3,
-    innerRadius: 1,
-  });
   return (
-    <>
-      <Custom geometry={solid} />
-      <Custom name="outer_profile" geometry={outerProfile} reference />
-      {topPath && <Custom name="outer_top" geometry={topPath} reference />}
-    </>
+    <Subtract>
+      <ExtrudeLinear
+        height={80}
+        topOutlineName="outer_top"
+        bottomOutlineName="outer_bottom"
+      >
+        <Rectangle size={[40, 20]} />
+      </ExtrudeLinear>
+      <ExtrudeLinear
+        height={80}
+        topOutlineName="inner_top"
+        bottomOutlineName="inner_bottom"
+      >
+        <Rectangle size={[34, 14]} />
+      </ExtrudeLinear>
+    </Subtract>
   );
 }
 
 const tube = renderToJscadModel(<TubeModel />, jscad);
 ```
 
-A `reference` marker names existing geometry and contributes no visible solid.
-`renderToJscadModel` returns `{ geometries, referenceFeatures }`: the first is the
-rendered native geometry, and each named reference contains `{ geometry, matrix }`.
-The native feature can be `Geom2`, `Path2`, or `Geom3`; `matrix` is its complete
-4×4 column-major ancestor transform in CAD mm, +Z up. Readers interpret the
-native type for their task. An edge reader can accept a planar path or profile
-and explicitly reject an unsupported solid reference.
+`bottomOutlineName` identifies the profile at the start of the extrusion (local
+Z=0), while `topOutlineName` identifies the profile at its endpoint (local
+Z=height), including its final twist (`twistAngle` is in radians). These are start/end names even for negative
+height; they are not world-space minimum/maximum Z. Parent transforms compose
+with the cap placement. Names refer to construction features at that operation,
+before any later boolean operations. Naming an outline leaves the solid unchanged.
 
-Names belong in the model's TSX, not in an author-built `namedEdges` map. The
+`renderToJscadModel` returns `{ geometries, referenceFeatures }`: rendered native
+geometry and named references containing `{ geometry, matrix }`. An extrusion
+outline retains its complete native planar profile, including holes; `matrix`
+places the cap in model-root CAD mm, +Z up. No contour is selected using bounds or
+size heuristics. Generic readers can expose a profile with multiple contours;
+the initial drawing edge reader requires one contour and rejects ambiguous ones.
+The tube declares separate outer and inner extrusion outlines, so each drawing
+reference identifies a single closed boundary.
+
+Names belong on the model's construction nodes. Authors do not assemble a
+separate named-edge map or add detached reference geometry. The
 `createRectangularTubeModel(parameters)` convenience constructor renders the same
 registered `RectangularTube` component through this collector. The isolated
-`jscad-fiber/model` entry point needs no viewer. Native `Custom` geometry uses this
-collector; the pure JSON headless renderer reports unsupported native `Custom`
-geometry explicitly rather than silently discarding it.
+`jscad-fiber/model` entry point needs no viewer. Serializable plans preserve the
+outline names as metadata on their extrusion operations; native geometry is
+resolved by the model collector.
 
-The model-aware reader samples the retained native geometry. `outer_top` is the
-straight feature between rounded-corner tangencies, measuring
-`40 - 2 × 3 = 34`mm. `outer_profile` is the closed rounded contour spanning the
-actual 40mm width. No artificial 40mm envelope edge is created.
+For a 40mm-wide tube with 3mm walls, the reader measures the complete closed
+`outer_top` outline as 40mm wide and `inner_top` as 34mm wide. The corresponding
+bottom outlines occupy Z=0; top outlines occupy Z=80 for this 80mm extrusion.
 
 Modelprinter continues to own parameter strings, schemas, defaults, dimensions,
 and validation; it does not duplicate named feature geometry. The earlier
@@ -126,10 +132,10 @@ An edge request records only the owning model and its opaque native name:
 ```ts
 {
   type: "drawing_dimension",
-  drawing_dimension_id: "end_top_feature",
+  drawing_dimension_id: "end_bore_width",
   drawing_part_view_id: "end",
   cad_component_id: "cad_tube",
-  edge_name: "outer_top",
+  edge_name: "inner_top",
   orientation: "horizontal",
   offset: 23,
   precision: 1,
@@ -203,7 +209,7 @@ loading and native reader results in the caller when several dimensions share a
 model.
 
 Horizontal and vertical dimensions measure the full sampled path's span on the
-camera's right/up axes. A closed `outer_profile` therefore measures 40mm wide;
+camera's right/up axes. A closed `outer_top` therefore measures 40mm wide;
 using only its first and last point would incorrectly collapse a closed contour.
 For this initial linear annotation, aligned dimensions accept only a straight,
 open edge. Closed paths and noncollinear curves must fail rather than silently
@@ -240,8 +246,8 @@ tolerances, and certified drafting styles remain follow-up work.
 The sharp 40 × 20 × 80mm tube uses width/height presets for its overall end and
 side dimensions. Its isometric and section views come from the same native model.
 The rounded profile with `outerRadius = 3`mm demonstrates the distinction between
-a real 34.0mm `outer_top` feature, a 40.0mm closed native `outer_profile` span, and
-an inferred overall width of 40.0mm. A section at Z=40 retains a 40.0mm side-view
+the 34.0mm bore width from `inner_top`, the 40.0mm outer outline width from
+`outer_top`, and an inferred overall width of 40.0mm. A section at Z=40 retains a 40.0mm side-view
 height. Tests also exercise changed parameters, world placement, scale, invalid
 references, unsupported curves, short spans, signed offsets, and page bounds.
 The companion jscad-electronics tests inspect the native model/paths; these SVGs
@@ -259,5 +265,5 @@ claim complete ISO/ASME drafting compliance.
 The TSX-declared native features, reader, and four-view model snapshot are proposed in
 [jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504).
 
-The `Custom name/reference` declarations and native collector are proposed in
+The `ExtrudeLinear` outline naming props and native collector are proposed in
 [jscad-fiber #142](https://github.com/tscircuit/jscad-fiber/pull/142).

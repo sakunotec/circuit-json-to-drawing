@@ -13,6 +13,7 @@ test("dimensions reject broken ownership and unusable projections before produci
   const edgeDimension = {
     type: "drawing_dimension" as const,
     drawing_dimension_id: "explicit_outer_top",
+    orientation: "horizontal" as const,
     drawing_part_view_id: "end",
     offset: 10,
     cad_component_id: fixture.cad.cad_component_id,
@@ -101,11 +102,23 @@ test("dimensions reject broken ownership and unusable projections before produci
     height: 80,
     center: { x: 0, y: 0 },
   }
-  const points = [...fixture.readEdge("outer_top").points].sort(
-    (a, b) => a.x - b.x,
+  // Renderer stroke/error regressions use a standalone linear adapter sample;
+  // the tube's named extrusion outlines are complete closed contours.
+  const dimension = drawing_dimension.parse({
+    ...edgeDimension,
+    edge_name: "runtime_straight",
+  })
+  const edge = referenceForModelEdge(
+    {
+      points: [
+        { x: -20, y: 10, z: 0 },
+        { x: 20, y: 10, z: 0 },
+      ],
+      closed: false,
+    },
+    dimension,
+    camera,
   )
-  const edge = { name: "outer_top", start: points[0]!, end: points.at(-1)! },
-    dimension = drawing_dimension.parse(edgeDimension)
   expect(() =>
     referenceForModelEdge(
       {
@@ -116,7 +129,7 @@ test("dimensions reject broken ownership and unusable projections before produci
         ],
         closed: false,
       },
-      dimension,
+      { ...dimension, orientation: "aligned" },
       camera,
     ),
   ).toThrow("straight")

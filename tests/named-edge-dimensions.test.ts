@@ -32,9 +32,21 @@ test("native JSCAD view presets produce a dimensioned rectangular stock tube she
     supersampling: 1,
     resolveScene: () => resized.scene,
   })
+  // Presets measure the rendered mesh; JSCAD snaps its bounds at a
+  // model-dependent epsilon, while native outline coordinates stay exact.
   measured(resizedSvg).forEach((value, index) =>
-    expect(value).toBeCloseTo([60, 30, 100][index]!, 3),
+    expect(value).toBeCloseTo([60, 30, 100][index]!, 2),
   )
   expect(resized.edgeNames).toEqual(fixture.edgeNames)
+  const resizedOutline = resized.readEdge("outer_top").points
+  expect(
+    Math.max(...resizedOutline.map((point) => point.x)) -
+      Math.min(...resizedOutline.map((point) => point.x)),
+  ).toBe(60)
+  expect(
+    resized
+      .readEdge("outer_top")
+      .points.every((point) => Math.abs(point.z - 100) < 1e-6),
+  ).toBe(true)
   await expect(svg).toMatchSvgSnapshot(import.meta.path)
 })
