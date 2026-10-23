@@ -1,190 +1,91 @@
-import type {
-  DrawingDimension,
-  DrawingPage,
-  DrawingPartView,
-} from "circuit-json"
-import { mat4, vec4 } from "gl-matrix"
-import type { Camera } from "poppygl"
-import { cadToGltf } from "./coordinates"
+import type { DrawingDimensionLine, DrawingPage } from "circuit-json"
 import { escapeXml } from "./svg"
-import type { DrawingPoint } from "./types"
 
-type Point2 = { x: number; y: number }
-/** Witness points for one linear annotation, after a reader has interpreted a
- * model feature. These are not an edge definition or a Circuit JSON element.
- */
-export interface DrawingReferenceSegment {
-  name: string
-  start: DrawingPoint
-  end: DrawingPoint
-  /** Reader samples used only to place the dimension outside the whole feature. */
-  clearancePoints?: readonly DrawingPoint[]
-}
+type Point = DrawingDimensionLine["start"]
 
-/** Project CAD world-space points (right-handed mm, +Z up) through the exact
- * glTF (+Y-up) camera used for the view raster, into page-centered paper mm
- * (+X right, +Y up). No model-to-paper scale is used for measurement values.
+/** Render an already resolved dimension in page-centered paper mm (+Y up).
+ * Model measurement, projection and placement belong to the producer. The
+ * exporter preserves both line endpoints and the supplied text verbatim.
  */
-export function projectDrawingPoint(
-  point: DrawingPoint,
-  view: DrawingPartView,
-  camera: Camera,
-): Point2 {
-  const [x, y, z] = cadToGltf([point.x, point.y, point.z])
-  const clip = vec4.transformMat4(
-    new Float64Array(4),
-    [x, y, z, 1],
-    mat4.multiply(new Float64Array(16), camera.proj, camera.view),
-  )
-  if (![...clip].every(Number.isFinite) || Math.abs(clip[3]!) < 1e-12)
-    throw new Error(
-      "Drawing reference point cannot project to finite paper coordinates",
-    )
-  return {
-    x: view.center.x + ((clip[0]! / clip[3]!) * view.width) / 2,
-    y: view.center.y + ((clip[1]! / clip[3]!) * view.height) / 2,
-  }
-}
-
-/** Measure in model mm. Aligned uses true 3D segment length; horizontal/vertical
- * use the camera's orthonormal right/up directions, before paper projection.
- */
-export function measureDrawingEdge(
-  edge: DrawingReferenceSegment,
-  dimension: DrawingDimension,
-  camera: Camera,
-) {
-  const delta = cadToGltf([
-    edge.end.x - edge.start.x,
-    edge.end.y - edge.start.y,
-    edge.end.z - edge.start.z,
-  ])
-  if (dimension.orientation === "aligned") return Math.hypot(...delta)
-  const cameraDelta = vec4.transformMat4(
-    new Float64Array(4),
-    [...delta, 0],
-    camera.view,
-  )
-  return Math.abs(cameraDelta[dimension.orientation === "horizontal" ? 0 : 1]!)
-}
-
-/** Conventional linear dimension strokes, in physical paper mm. Extension lines
- * leave a 1 mm gap at the measured points, and 2 mm beyond the dimension line.
- * Positive offsets follow the left normal. Horizontal/vertical endpoints are
- * ordered left-to-right/bottom-to-top; aligned preserves the authored direction.
- */
-export function renderDrawingDimension(
-  dimension: DrawingDimension,
-  edge: DrawingReferenceSegment,
-  view: DrawingPartView,
+export function renderDrawingDimensionLine(
+  dimension: DrawingDimensionLine,
   page: DrawingPage,
-  camera: Camera,
 ) {
-  let start = projectDrawingPoint(edge.start, view, camera)
-  let end = projectDrawingPoint(edge.end, view, camera)
-  if (
-    (dimension.orientation === "horizontal" && start.x > end.x) ||
-    (dimension.orientation === "vertical" && start.y > end.y)
-  )
-    [start, end] = [end, start]
+  const start = { ...dimension.start },
+    end = { ...dimension.end }
+  const witnesses = [dimension.edge_ref_start, dimension.edge_ref_end]
+  const coordinates: Point[] = [start, end]
+  for (const witness of witnesses) if (witness) coordinates.push(witness)
+  if (coordinates.some((point) => ![point.x, point.y].every(Number.isFinite)))
+    throw new Error("Dimension line requires finite paper coordinates")
+  if (typeof dimension.text !== "string" || dimension.text.length === 0)
+    throw new Error("Dimension line requires preformatted text")
   const delta = { x: end.x - start.x, y: end.y - start.y }
-  const projectedLength = Math.hypot(delta.x, delta.y)
-  const value = measureDrawingEdge(edge, dimension, camera)
-  if (
-    ![start.x, start.y, end.x, end.y, projectedLength, value].every(
-      Number.isFinite,
-    )
-  )
-    throw new Error(
-      `Drawing reference "${edge.name}" exceeds finite drawing coordinates`,
-    )
-  if (projectedLength < 1e-6 || value < 1e-6)
-    throw new Error(
-      `Drawing reference "${edge.name}" has no measurable ${dimension.orientation} extent in view "${view.name ?? "unnamed view"}"`,
-    )
-  const tangent =
-    dimension.orientation === "horizontal"
-      ? { x: 1, y: 0 }
-      : dimension.orientation === "vertical"
-        ? { x: 0, y: 1 }
-        : { x: delta.x / projectedLength, y: delta.y / projectedLength }
-  const normal = { x: -tangent.y, y: tangent.x }
-  const dot = (point: Point2) => point.x * normal.x + point.y * normal.y
-  const side = dimension.offset < 0 ? -1 : 1
-  const clearance = (edge.clearancePoints ?? [edge.start, edge.end]).map(
-    (point) => dot(projectDrawingPoint(point, view, camera)),
-  )
-  const baseline =
-    clearance.reduce(
-      (bound, coordinate) =>
-        side > 0 ? Math.max(bound, coordinate) : Math.min(bound, coordinate),
-      side > 0 ? -Infinity : Infinity,
-    ) + dimension.offset
-  const onBaseline = (point: Point2): Point2 => ({
-    x: point.x + normal.x * (baseline - dot(point)),
-    y: point.y + normal.y * (baseline - dot(point)),
-  })
-  const a = onBaseline(start),
-    b = onBaseline(end)
-  const span = Math.hypot(b.x - a.x, b.y - a.y)
-  const label = value.toFixed(dimension.precision)
-  const textWidth = Math.max(4, label.length * 1.8)
-  const outside = span < textWidth + 7
-  const add = (point: Point2, vector: Point2, distance: number): Point2 => ({
+  const span = Math.hypot(delta.x, delta.y)
+  if (!Number.isFinite(span))
+    throw new Error("Dimension line exceeds finite paper coordinates")
+  if (span === 0) throw new Error("Dimension line endpoints must be distinct")
+  const tangent = { x: delta.x / span, y: delta.y / span }
+  const readable =
+    tangent.x < -1e-12 || (Math.abs(tangent.x) <= 1e-12 && tangent.y < 0)
+      ? -1
+      : 1
+  const textTangent = { x: tangent.x * readable, y: tangent.y * readable }
+  const textNormal = { x: -textTangent.y, y: textTangent.x }
+  const add = (point: Point, vector: Point, distance: number): Point => ({
     x: point.x + vector.x * distance,
     y: point.y + vector.y * distance,
   })
+  const textWidth = Math.max(4, [...dimension.text].length * 1.8)
+  const outside = span < textWidth + 7
   const labelPosition = outside
-    ? add(b, tangent, textWidth / 2 + 7)
-    : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-  const labelCenter = add(labelPosition, normal, 1.8)
-  const extensionEnds = [add(a, normal, side * 2), add(b, normal, side * 2)]
-  const extensionStarts = [start, end].map((point) => {
-    const distance = baseline - dot(point)
-    return add(
-      point,
-      normal,
-      Math.sign(distance) * Math.min(1, Math.abs(distance)),
-    )
-  })
-  const arrowPoints = (tip: Point2, direction: number) => {
+    ? add(end, tangent, textWidth / 2 + 7)
+    : { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+  const labelCenter = add(labelPosition, textNormal, 1.8)
+  const arrowPoints = (tip: Point, direction: number): Point[] => {
     const base = add(tip, tangent, direction * 2.5)
-    return [tip, add(base, normal, 0.8), add(base, normal, -0.8)]
+    return [tip, add(base, textNormal, 0.8), add(base, textNormal, -0.8)]
   }
+  const extensions = witnesses.flatMap((witness, index) => {
+    if (!witness) return []
+    const tip = index ? end : start
+    const length = Math.hypot(tip.x - witness.x, tip.y - witness.y)
+    if (!Number.isFinite(length))
+      throw new Error("Dimension witness exceeds finite paper coordinates")
+    if (length === 0) return []
+    const direction = {
+      x: (tip.x - witness.x) / length,
+      y: (tip.y - witness.y) / length,
+    }
+    return [
+      {
+        start: add(witness, direction, Math.min(1, length)),
+        end: add(tip, direction, 2),
+      },
+    ]
+  })
   const outsideEnds = outside
-    ? [add(a, tangent, -4), add(b, tangent, textWidth + 10)]
+    ? [add(start, tangent, -4), add(end, tangent, textWidth + 10)]
     : []
   const labelCorners = [-1, 1].flatMap((sign) =>
     [-2, 2].map((height) =>
       add(
-        add(labelCenter, tangent, sign * (textWidth / 2 + 1)),
-        normal,
+        add(labelCenter, textTangent, sign * (textWidth / 2 + 1)),
+        textNormal,
         height,
       ),
     ),
   )
   const paperPoints = [
-    start,
-    end,
-    a,
-    b,
-    ...extensionEnds,
-    ...extensionStarts,
+    ...coordinates,
+    ...extensions.flatMap((extension) => [extension.start, extension.end]),
     ...outsideEnds,
     ...labelCorners,
-    ...arrowPoints(a, outside ? -1 : 1),
-    ...arrowPoints(b, outside ? 1 : -1),
-    add(labelCenter, tangent, textWidth / 2 + 1),
-    add(labelCenter, tangent, -textWidth / 2 - 1),
+    ...arrowPoints(start, outside ? -1 : 1),
+    ...arrowPoints(end, outside ? 1 : -1),
   ]
-  if (
-    paperPoints.some(
-      (point) => !Number.isFinite(point.x) || !Number.isFinite(point.y),
-    )
-  )
-    throw new Error(
-      `Drawing reference "${edge.name}" exceeds finite drawing coordinates`,
-    )
+  if (paperPoints.some((point) => ![point.x, point.y].every(Number.isFinite)))
+    throw new Error("Dimension line exceeds finite paper coordinates")
   if (
     paperPoints.some(
       (point) =>
@@ -193,36 +94,40 @@ export function renderDrawingDimension(
     )
   )
     throw new Error(
-      `Dimension of "${edge.name}" extends outside its drawing page`,
+      `Dimension line "${dimension.name ?? dimension.drawing_dimension_line_id}" extends outside its drawing page`,
     )
-  const svgPoint = (point: Point2) => ({
+  const svgPoint = (point: Point) => ({
     x: page.width / 2 + point.x,
     y: page.height / 2 - point.y,
   })
-  const line = (from: Point2, to: Point2) => {
+  const line = (from: Point, to: Point, role: string) => {
     const p = svgPoint(from),
       q = svgPoint(to)
-    return `<path d="M ${p.x} ${p.y} L ${q.x} ${q.y}"/>`
+    return `<path data-dimension-role="${role}" d="M ${p.x} ${p.y} L ${q.x} ${q.y}"/>`
   }
-  const arrow = (tip: Point2, direction: number) => {
+  const arrow = (tip: Point, direction: number) => {
     const points = arrowPoints(tip, direction).map(svgPoint)
-    return `<polygon points="${points.map((p) => `${p.x},${p.y}`).join(" ")}" fill="black" stroke="none"/>`
+    return `<polygon points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="black" stroke="none"/>`
   }
   const drawingLines = [
-    line(extensionStarts[0]!, extensionEnds[0]!),
-    line(extensionStarts[1]!, extensionEnds[1]!),
-    line(a, b),
+    ...extensions.map((extension) =>
+      line(extension.start, extension.end, "extension"),
+    ),
+    line(start, end, "dimension"),
   ]
-  if (outside) {
+  if (outside)
     drawingLines.push(
-      line(add(a, tangent, -4), a),
-      line(b, add(b, tangent, textWidth + 10)),
+      line(add(start, tangent, -4), start, "leader"),
+      line(end, add(end, tangent, textWidth + 10), "leader"),
     )
-  }
-  let angle = (-Math.atan2(tangent.y, tangent.x) * 180) / Math.PI
-  if (angle < -90) angle += 180
-  if (angle > 90) angle -= 180
+  const angle = (-Math.atan2(textTangent.y, textTangent.x) * 180) / Math.PI
   const text = svgPoint(labelCenter)
-  const svg = `<g data-drawing-dimension-id="${escapeXml(dimension.drawing_dimension_id)}" data-measured-value="${value}" fill="none" stroke="black" stroke-width="0.25"><title>${escapeXml(dimension.name ?? edge.name)}: ${label} mm</title>${drawingLines.join("")}${arrow(a, outside ? -1 : 1)}${arrow(b, outside ? 1 : -1)}<g transform="translate(${text.x} ${text.y}) rotate(${angle})"><rect x="${-textWidth / 2 - 0.6}" y="-1.5" width="${textWidth + 1.2}" height="3.5" fill="white" stroke="none"/><text text-anchor="middle" dominant-baseline="middle" font-size="3" fill="black" stroke="none">${label}</text></g></g>`
-  return { svg, value, start, end, dimensionStart: a, dimensionEnd: b }
+  const svg = `<g data-drawing-dimension-line-id="${escapeXml(dimension.drawing_dimension_line_id)}" fill="none" stroke="black" stroke-width="0.25"><title>${escapeXml(dimension.name ?? dimension.text)}</title>${drawingLines.join("")}${arrow(start, outside ? -1 : 1)}${arrow(end, outside ? 1 : -1)}<g transform="translate(${text.x} ${text.y}) rotate(${angle})"><rect x="${-textWidth / 2 - 0.6}" y="-1.5" width="${textWidth + 1.2}" height="3.5" fill="white" stroke="none"/><text xml:space="preserve" text-anchor="middle" dominant-baseline="middle" font-size="3" fill="black" stroke="none">${escapeXml(dimension.text)}</text></g></g>`
+  const labelBounds = {
+    left: Math.min(...labelCorners.map((point) => point.x)),
+    right: Math.max(...labelCorners.map((point) => point.x)),
+    bottom: Math.min(...labelCorners.map((point) => point.y)),
+    top: Math.max(...labelCorners.map((point) => point.y)),
+  }
+  return { svg, start, end, labelBounds }
 }

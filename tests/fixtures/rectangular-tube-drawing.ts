@@ -5,14 +5,15 @@ import {
   listJscadNamedEdges,
   readJscadNamedEdge,
 } from "jscad-electronics/vanilla"
-import type {
-  DrawingDimension,
-  DrawingDimensionInput,
-  DrawingPartView,
-} from "circuit-json"
+import type { DrawingDimensionLineInput, DrawingPartView } from "circuit-json"
 import { cadToGltf } from "../../lib"
 import { mat4 } from "gl-matrix"
 import type { GLTFScene } from "poppygl"
+import {
+  fixtureCamera,
+  prepareDimensionLine,
+  scenePoints,
+} from "./prepare-dimension-line"
 
 /** The solid and named native JSCAD paths come from the same Fiber component tree.
  * The reader applies feature ancestry into model-root CAD mm (+Z up). Outer CAD
@@ -86,6 +87,7 @@ export function rectangularTubeDrawing(
       drawing_page_id: page.drawing_page_id,
       name: "END PROFILE",
       direction: "z_positive",
+      scale: 1,
       source_component_ids: [cad.source_component_id],
       center: { x: -85, y: 35 },
       width: 90,
@@ -97,6 +99,7 @@ export function rectangularTubeDrawing(
       drawing_page_id: page.drawing_page_id,
       name: "SIDE ELEVATION",
       direction: "y_negative",
+      scale: 1,
       source_component_ids: [cad.source_component_id],
       center: { x: 5, y: 20 },
       width: 70,
@@ -114,28 +117,38 @@ export function rectangularTubeDrawing(
       height: 115,
     },
   ]
-  const dimensions: DrawingDimensionInput[] = [
-    {
-      type: "drawing_dimension",
-      drawing_dimension_id: "end_view_width",
-      drawing_part_view_id: "end",
-      width_of_view: true,
+  const readEdge = (name: string) => readJscadNamedEdge(model, name)
+  const prepareLine = (
+    viewId: string,
+    points: readonly { x: number; y: number; z: number }[],
+    options: Parameters<typeof prepareDimensionLine>[3],
+  ) => {
+    const view = views.find((view) => view.drawing_part_view_id === viewId)!
+    return prepareDimensionLine(
+      view,
+      fixtureCamera(view, scene),
+      points,
+      options,
+    )
+  }
+  const dimensions: DrawingDimensionLineInput[] = [
+    prepareLine("end", readEdge("outer_top").points, {
+      id: "end_width",
+      axis: "horizontal",
       offset: 10,
-    },
-    {
-      type: "drawing_dimension",
-      drawing_dimension_id: "end_view_height",
-      drawing_part_view_id: "end",
-      height_of_view: true,
+      edgeName: "outer_top",
+    }),
+    prepareLine("end", readEdge("outer_top").points, {
+      id: "end_height",
+      axis: "vertical",
       offset: 10,
-    },
-    {
-      type: "drawing_dimension",
-      drawing_dimension_id: "side_view_height",
-      drawing_part_view_id: "side",
-      height_of_view: true,
+      edgeName: "outer_top",
+    }),
+    prepareLine("side", scenePoints(scene), {
+      id: "side_length",
+      axis: "vertical",
       offset: -10,
-    },
+    }),
   ]
   const block = {
     type: "drawing_page_title_block",
@@ -158,11 +171,14 @@ export function rectangularTubeDrawing(
     page,
     model,
     edgeNames: listJscadNamedEdges(model),
-    readEdge: (name: string) => readJscadNamedEdge(model, name),
-    resolveModelEdge: (dimension: DrawingDimension) => {
-      if (dimension.cad_component_id !== cad.cad_component_id)
-        throw new Error("Model edge references an unknown CAD component")
-      return readJscadNamedEdge(model, dimension.edge_name!)
-    },
+    readEdge,
+    prepareLine,
+    resolveModelEdges: (view: DrawingPartView) =>
+      view.drawing_part_view_id === "end"
+        ? listJscadNamedEdges(model).map((name) => ({
+            name,
+            ...readEdge(name),
+          }))
+        : [],
   }
 }

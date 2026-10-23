@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "poppygl": "^0.0.37",
-    "circuit-json": "https://pkg.pr.new/circuit-json@e8edeb7",
+    "circuit-json": "https://pkg.pr.new/circuit-json@1be4f9b",
     "@tscircuit/alphabet": "0.0.25",
     "gl-matrix": "^3.4.4"
   },

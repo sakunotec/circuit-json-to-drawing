@@ -3,50 +3,41 @@ import "bun-match-svg"
 import { convertCircuitJsonToDrawingSvg } from "../lib"
 import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 
-test("native JSCAD view presets produce a dimensioned rectangular stock tube sheet", async () => {
+test("upstream JSCAD preparation produces resolved dimension lines on a real stock-tube sheet", async () => {
   const fixture = rectangularTubeDrawing()
   const original = JSON.stringify(fixture.input)
+  expect(fixture.dimensions.map((line) => line.text)).toEqual([
+    "40.0",
+    "20.0",
+    "80.0",
+  ])
   const svg = await convertCircuitJsonToDrawingSvg(fixture.input, {
-    pixelsPerMm: 4,
-    supersampling: 2,
     resolveScene: () => fixture.scene,
   })
-  expect(svg.match(/data-drawing-dimension-id=/g)).toHaveLength(3)
-  const measured = (drawing: string) =>
-    [...drawing.matchAll(/data-measured-value="([^"]+)"/g)].map((match) =>
-      Number(match[1]),
-    )
-  measured(svg).forEach((value, index) =>
-    expect(value).toBeCloseTo([40, 20, 80][index]!, 3),
-  )
-  expect(svg).toContain("40.0</text>")
-  expect(
-    fixture.dimensions.every(
-      (dimension) => !dimension.cad_component_id && !dimension.edge_name,
-    ),
-  ).toBe(true)
+  expect(svg.match(/data-drawing-dimension-line-id=/g)).toHaveLength(3)
+  for (const text of ["40.0", "20.0", "80.0"])
+    expect(svg).toContain(`${text}</text>`)
+  expect(svg).not.toContain("data-measured-value")
+  expect(svg).not.toContain("data-drawing-edge-name")
   expect(JSON.stringify(fixture.input)).toBe(original)
   const resized = rectangularTubeDrawing(60, 30, 4, 100)
+  expect(resized.dimensions.map((line) => line.text)).toEqual([
+    "60.0",
+    "30.0",
+    "100.0",
+  ])
   const resizedSvg = await convertCircuitJsonToDrawingSvg(resized.input, {
     pixelsPerMm: 1,
     supersampling: 1,
     resolveScene: () => resized.scene,
   })
-  // Presets measure the rendered mesh; JSCAD snaps its bounds at a
-  // model-dependent epsilon, while native outline coordinates stay exact.
-  measured(resizedSvg).forEach((value, index) =>
-    expect(value).toBeCloseTo([60, 30, 100][index]!, 2),
-  )
-  expect(resized.edgeNames).toEqual(fixture.edgeNames)
-  const resizedOutline = resized.readEdge("outer_top").points
+  for (const text of ["60.0", "30.0", "100.0"])
+    expect(resizedSvg).toContain(`${text}</text>`)
+  const outline = resized.readEdge("outer_top").points
   expect(
-    Math.max(...resizedOutline.map((point) => point.x)) -
-      Math.min(...resizedOutline.map((point) => point.x)),
+    Math.max(...outline.map((point) => point.x)) -
+      Math.min(...outline.map((point) => point.x)),
   ).toBe(60)
-  expect(
-    resized
-      .readEdge("outer_top")
-      .points.every((point) => Math.abs(point.z - 100) < 1e-6),
-  ).toBe(true)
+  expect(outline.every((point) => point.z === 100)).toBe(true)
   await expect(svg).toMatchSvgSnapshot(import.meta.path)
 })

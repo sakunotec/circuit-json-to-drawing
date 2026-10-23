@@ -1,66 +1,52 @@
 import { expect, test } from "bun:test"
 import "bun-match-svg"
-import { convertCircuitJsonToDrawingSvg } from "../lib"
-import { drawing_dimension } from "circuit-json"
-import { mat4 } from "gl-matrix"
-import { renderDrawCalls } from "poppygl"
-import { inferViewDimensionReference } from "../lib/view-dimension-reference"
-import { measureDrawingEdge, renderDrawingDimension } from "../lib/dimensions"
-import { referenceForModelEdge } from "../lib/model-edge-reference"
+import { createOutlineSection } from "poppygl"
+import { convertCircuitJsonToDrawingSvg, sectionToGltf } from "../lib"
+import {
+  fixtureCamera,
+  prepareDimensionLine,
+  scenePoints,
+} from "./fixtures/prepare-dimension-line"
 import { rectangularTubeDrawing } from "./fixtures/rectangular-tube-drawing"
 
-test("named extrusion outlines distinguish bore and outside dimensions on rounded and sectioned tubes", async () => {
+test("upstream resolved outlines distinguish bore and outside width and explicitly update section measurements", async () => {
   const fixture = rectangularTubeDrawing(40, 20, 3, 80, 3)
-  const bore = fixture.readEdge("inner_top")
-  const borePoints = [...bore.points].sort((a, b) => a.x - b.x)
-  expect(borePoints[0]!.x).toBeCloseTo(-17, 5)
-  expect(borePoints.at(-1)!.x).toBeCloseTo(17, 5)
+  const bore = fixture.readEdge("inner_top"),
+    outside = fixture.readEdge("outer_top")
   expect(bore.closed).toBe(true)
-  expect(bore.points.every((point) => Math.abs(point.z - 80) < 1e-6)).toBe(true)
-  const outside = fixture.readEdge("outer_top")
   expect(outside.closed).toBe(true)
   expect(outside.points.length).toBeGreaterThan(8)
-  expect(outside.points.every((point) => Math.abs(point.z - 80) < 1e-6)).toBe(
-    true,
-  )
+  expect(bore.points.every((point) => point.z === 80)).toBe(true)
   expect(
-    fixture
-      .readEdge("outer_bottom")
-      .points.every((point) => Math.abs(point.z) < 1e-6),
+    fixture.readEdge("outer_bottom").points.every((point) => point.z === 0),
   ).toBe(true)
-  expect(
-    fixture
-      .readEdge("inner_bottom")
-      .points.every((point) => Math.abs(point.z) < 1e-6),
-  ).toBe(true)
+  const boreLine = fixture.prepareLine("end", bore.points, {
+    id: "bore_width",
+    axis: "horizontal",
+    offset: 10,
+    edgeName: "inner_top",
+    name: "Bore width",
+  })
+  const outsideLine = fixture.prepareLine("end", outside.points, {
+    id: "outside_width",
+    axis: "horizontal",
+    offset: 23,
+    edgeName: "outer_top",
+    name: "Outside width",
+  })
+  expect(boreLine.text).toBe("34.0")
+  expect(outsideLine.text).toBe("40.0")
   const input = [
-    ...fixture.input.map((record) =>
-      record.type === "drawing_dimension" &&
-      "drawing_dimension_id" in record &&
-      record.drawing_dimension_id === "end_view_width"
-        ? { ...record, offset: 23 }
-        : record,
+    ...fixture.input.filter(
+      (record) =>
+        !(
+          record.type === "drawing_dimension_line" &&
+          "drawing_dimension_line_id" in record &&
+          record.drawing_dimension_line_id === "end_width"
+        ),
     ),
-    {
-      type: "drawing_dimension" as const,
-      drawing_dimension_id: "bore_width",
-      drawing_part_view_id: "end",
-      cad_component_id: fixture.cad.cad_component_id,
-      edge_name: "inner_top",
-      name: "Bore width from inner top outline",
-      orientation: "horizontal" as const,
-      offset: 10,
-    },
-    {
-      type: "drawing_dimension" as const,
-      drawing_dimension_id: "outside_outline_width",
-      drawing_part_view_id: "end",
-      cad_component_id: fixture.cad.cad_component_id,
-      edge_name: "outer_top",
-      name: "Outside width from outer top outline",
-      orientation: "horizontal" as const,
-      offset: -10,
-    },
+    boreLine,
+    outsideLine,
   ]
   const original = JSON.stringify(input)
   const render = (records = input) =>
@@ -68,214 +54,46 @@ test("named extrusion outlines distinguish bore and outside dimensions on rounde
       pixelsPerMm: 2,
       supersampling: 2,
       resolveScene: () => fixture.scene,
-      resolveModelEdge: fixture.resolveModelEdge,
     })
-  const measured = (drawing: string, id: string) =>
-    Number(
-      drawing.match(
-        new RegExp(
-          `data-drawing-dimension-id="${id}" data-measured-value="([^"]+)"`,
-        ),
-      )?.[1],
-    )
   const svg = await render()
-  expect(measured(svg, "bore_width")).toBeCloseTo(34, 3)
-  expect(measured(svg, "end_view_width")).toBeCloseTo(40, 3)
-  expect(measured(svg, "outside_outline_width")).toBeCloseTo(40, 3)
   expect(svg).toContain("34.0</text>")
   expect(svg).toContain("40.0</text>")
-  expect(
-    fixture.dimensions.every(
-      (dimension) => !dimension.cad_component_id && !dimension.edge_name,
-    ),
-  ).toBe(true)
-  expect([...fixture.edgeNames].sort()).toEqual([
-    "inner_bottom",
-    "inner_top",
-    "outer_bottom",
-    "outer_top",
-  ])
-  const curvedAligned = input.map((record) =>
-    record.type === "drawing_dimension" &&
-    "drawing_dimension_id" in record &&
-    record.drawing_dimension_id === "outside_outline_width"
-      ? { ...record, orientation: "aligned" as const }
-      : record,
-  )
-  await expect(render(curvedAligned)).rejects.toThrow("straight")
+  const side = fixture.views.find(
+    (view) => view.drawing_part_view_id === "side",
+  )!
+  const sectionedView = {
+    ...side,
+    section: { axis: "z" as const, offset: 40, keep_side: "less" as const },
+  }
   const sectioned = input.map((record) =>
-    record.type === "drawing_part_view" &&
-    "drawing_part_view_id" in record &&
-    record.drawing_part_view_id === "side"
-      ? {
-          ...record,
-          section: {
-            axis: "z" as const,
-            offset: 40,
-            keep_side: "less" as const,
-          },
-        }
+    record === side ? sectionedView : record,
+  )
+  const withoutNewLine = await render(sectioned)
+  expect(withoutNewLine).toContain("80.0</text>")
+  const cut = {
+    ...fixture.scene,
+    drawCalls: createOutlineSection(
+      fixture.scene.drawCalls,
+      sectionToGltf(sectionedView.section),
+    ).drawCalls,
+  }
+  const updatedLine = prepareDimensionLine(
+    sectionedView,
+    fixtureCamera(sectionedView, fixture.scene),
+    scenePoints(cut),
+    { id: "side_length", axis: "vertical", offset: -10 },
+  )
+  expect(updatedLine.text).toBe("40.0")
+  const updated = sectioned.map((record) =>
+    record.type === "drawing_dimension_line" &&
+    "drawing_dimension_line_id" in record &&
+    record.drawing_dimension_line_id === "side_length"
+      ? updatedLine
       : record,
   )
-  const sectionSvg = await render(sectioned)
-  expect(measured(sectionSvg, "side_view_height")).toBeCloseTo(40, 3)
-  const scaled = input.map((record) =>
-    record.type === "drawing_part_view" ? { ...record, scale: 0.5 } : record,
-  )
-  const scaledSvg = await render(scaled)
-  expect(measured(scaledSvg, "end_view_width")).toBeCloseTo(40, 3)
-  expect(measured(scaledSvg, "bore_width")).toBeCloseTo(34, 3)
-  const emptySection = input.map((record) =>
-    record.type === "drawing_part_view"
-      ? {
-          ...record,
-          section: {
-            axis: "z" as const,
-            offset: -1,
-            keep_side: "less" as const,
-          },
-        }
-      : record,
-  )
-  await expect(render(emptySection)).rejects.toThrow("no retained geometry")
-  // A triangle's projected width is less than its AABB's diagonal. The unused
-  // vertex must not inflate indexed geometry's extent; placement must be applied.
-  const triangle = [
-    {
-      ...fixture.scene.drawCalls[0]!,
-      positions: new Float32Array([0, 0, 0, 10, 0, 0, 0, 0, -10, 1000, 0, 0]),
-      indices: new Uint32Array([0, 1, 2]),
-      model: mat4.fromTranslation(mat4.create(), [12, -4, -7]),
-    },
-  ]
-  const camera = renderDrawCalls(triangle, {
-    projection: "orthographic",
-    width: 100,
-    height: 100,
-    orthographicHeight: 100,
-    camPos: [112, -4, 93],
-    lookAt: [12, -4, -7],
-  }).camera
-  const widthDimension = drawing_dimension.parse(fixture.dimensions[0])
-  const reference = inferViewDimensionReference(
-    widthDimension,
-    triangle,
-    camera,
-  )
-  expect(measureDrawingEdge(reference, widthDimension, camera)).toBeCloseTo(
-    10 / Math.SQRT2,
-    5,
-  )
-  const view = {
-    ...fixture.views[0]!,
-    center: { x: 0, y: 0 },
-    width: 100,
-    height: 100,
-  }
-  // Signed presets start from the outer boundary on their chosen side.
-  const frontCamera = renderDrawCalls(fixture.scene.drawCalls, {
-    projection: "orthographic",
-    width: 100,
-    height: 100,
-    orthographicHeight: 80,
-    camPos: [0, 240, 0],
-    lookAt: [0, 40, 0],
-    up: "z-",
-  }).camera
-  for (const axis of ["width", "height"] as const) {
-    const positiveDimension = drawing_dimension.parse({
-      ...widthDimension,
-      width_of_view: axis === "width",
-      height_of_view: axis === "height",
-      orientation: undefined,
-      offset: 8,
-    })
-    const negativeDimension = { ...positiveDimension, offset: -8 }
-    const positive = renderDrawingDimension(
-      positiveDimension,
-      inferViewDimensionReference(
-        positiveDimension,
-        fixture.scene.drawCalls,
-        frontCamera,
-      ),
-      view,
-      fixture.page,
-      frontCamera,
-    )
-    const negative = renderDrawingDimension(
-      negativeDimension,
-      inferViewDimensionReference(
-        negativeDimension,
-        fixture.scene.drawCalls,
-        frontCamera,
-      ),
-      view,
-      fixture.page,
-      frontCamera,
-    )
-    if (axis === "width") {
-      expect(positive.dimensionStart.y).toBeGreaterThan(negative.end.y)
-      expect(negative.dimensionStart.y).toBeLessThan(positive.start.y)
-      expect(positive.start.y).toBeGreaterThan(negative.start.y)
-    } else {
-      expect(positive.dimensionStart.x).toBeLessThan(negative.start.x)
-      expect(negative.dimensionStart.x).toBeGreaterThan(positive.end.x)
-      expect(positive.start.x).toBeLessThan(negative.start.x)
-    }
-  }
-  // Extrema along the measurement axis are not enough to place a curve's line:
-  // its furthest perpendicular samples must clear the annotation as well.
-  const curvedEdge = {
-    points: [
-      { x: -20, y: 0, z: 0 },
-      { x: 0, y: 40, z: 0 },
-      { x: 20, y: 0, z: 0 },
-      { x: 0, y: -40, z: 0 },
-    ],
-    closed: true,
-  }
-  for (const orientation of ["horizontal", "vertical"] as const) {
-    for (const offset of [8, -8]) {
-      const dimension = drawing_dimension.parse({
-        type: "drawing_dimension",
-        drawing_dimension_id: "curve_clearance",
-        drawing_part_view_id: "end",
-        cad_component_id: fixture.cad.cad_component_id,
-        edge_name: "curve",
-        orientation,
-        offset,
-      })
-      const annotation = renderDrawingDimension(
-        dimension,
-        referenceForModelEdge(curvedEdge, dimension, frontCamera),
-        view,
-        fixture.page,
-        frontCamera,
-      )
-      if (orientation === "horizontal")
-        expect(annotation.dimensionStart.y).toBeCloseTo(
-          offset > 0 ? 58 : -58,
-          5,
-        )
-      else
-        expect(annotation.dimensionStart.x).toBeCloseTo(
-          offset > 0 ? -33 : 33,
-          5,
-        )
-    }
-  }
+  const updatedSvg = await render(updated)
+  expect(updatedSvg).not.toContain("80.0</text>")
+  expect(updatedSvg).toContain("40.0</text>")
   expect(JSON.stringify(input)).toBe(original)
-  // Keep the manufacturing sheet free of a redundant overall-width callout;
-  // the separate render above verifies the native contour's full projected span.
-  const sheet = await render(
-    input.filter(
-      (record) =>
-        !(
-          record.type === "drawing_dimension" &&
-          "drawing_dimension_id" in record &&
-          record.drawing_dimension_id === "outside_outline_width"
-        ),
-    ),
-  )
-  await expect(sheet).toMatchSvgSnapshot(import.meta.path)
+  await expect(svg).toMatchSvgSnapshot(import.meta.path)
 })

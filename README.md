@@ -115,7 +115,8 @@ for the title block.
 | `supersampling`    | 2                            | Positive integer antialiasing factor                                                                      |
 | `maxRasterPixels`  | 16,000,000                   | Supersampled pixel limit per view, checked before scene resolution                                        |
 | `resolveScene`     | required to render           | Resolve configured part geometry into a PoppyGL scene                                                     |
-| `resolveModelEdge` | required for edge dimensions | Read named geometry from its owning model; return sampled CAD world points and whether the path is closed |
+| `showEdgeNames` | `false` | Show small gray native feature names; dimension lines are unaffected |
+| `resolveModelEdges` | optional | Enumerate named model features for labels when `showEdgeNames` is enabled |
 
 ## Install and development
 
@@ -178,72 +179,53 @@ runs tests and typechecking before publishing, and serializes releases to avoid
 version collisions. Versions are bumped explicitly in package.json; the workflow
 does not write repository contents or create version commits. No build or native runtime dependency is required.
 
-## Geometry-derived linear dimensions
+## Resolved dimension lines
 
-The proposed `drawing_dimension` record distinguishes native model-edge references
-from explicit inferred view extents. Conventional annotations add extension lines,
-arrowheads, and geometry-derived labels:
+`drawing_dimension_line` contains the final paper-space endpoints and preformatted
+text to render. The producer measures native geometry and chooses placement before
+exporting Circuit JSON. The exporter draws exactly those positions and text:
 
-```tsx
-<assembly.drawing.partview
-  partRef=".tube"
-  name="end"
-  direction="z+"
-  width="90mm"
-  height="90mm"
->
-  <assembly.drawing.dimension widthOfView offset="10mm" />
-  <assembly.drawing.dimension heightOfView offset="10mm" />
-  <assembly.drawing.dimension
-    edgeRef=".tube > .inner_top"
-    orientation="horizontal"
-    offset="23mm"
-  />
-</assembly.drawing.partview>
+```ts
+{
+  type: "drawing_dimension_line",
+  drawing_dimension_line_id: "outside_width",
+  drawing_part_view_id: "end",
+  start: { x: -105, y: 55 },
+  end: { x: -65, y: 55 },
+  text: "40.0",
+  edge_ref_start: { x: -105, y: 45 },
+  edge_ref_end: { x: -65, y: 45 },
+  edge_ref_name: "outer_top",
+}
 ```
 
-`edgeRef` selects a name actually defined by the owning model. A label such as
-`overall_width` is not a bounds request. Circuit JSON selects exactly one target:
-`cad_component_id` plus opaque `edge_name`, `width_of_view: true`, or
-`height_of_view: true`. View flags reference only the part view. There is no target
-enum or default target, and Circuit JSON contains neither edge geometry nor a
-topology schema.
+All line and witness coordinates are paper mm from page center, +X right and +Y
+up. Each witness is optional independently. There are no orientation, offset,
+precision, model targets or inferred-view flags on this record. Arrow direction
+and readable text rotation follow the supplied line. Changing a part view does
+not move or remeasure already resolved annotations.
 
-Callers supply `resolveModelEdge(dimension, view, input)` for native edge requests.
-It loads the owning model and returns an ephemeral sampled path
-`{ points, closed }` in CAD world mm (+Z up). The geometry remains owned by the
-source model. The model names outlines directly on its construction operations:
+Use `showEdgeNames: true` for small gray feature-name labels. Without a model
+reader, labels use each line's `edge_ref_name` near its witness midpoint (or its
+line midpoint). Optional `resolveModelEdges(view, input)` enumerates all named
+native features, even without dimension records. It returns `{name, points,
+closed}` runtime samples in CAD world mm, +Z up. The exporter projects these
+labels with the actual raster camera and stacks coincident names. The callback
+is never called when labels are disabled.
 
-```tsx
-<ExtrudeLinear
-  height={80}
-  topOutlineName="outer_top"
-  bottomOutlineName="outer_bottom"
->
-  <Rectangle size={[40, 20]} />
-</ExtrudeLinear>
-```
+[Resolved-line coordinates, optional witnesses and native readers](docs/dimensions.md)
+explains the producer/exporter boundary. The real JSCAD tube examples calculate
+measurements upstream: 40 mm outside width and 34 mm bore width, using closed
+extrusion outlines named `outer_top` and `inner_top`. Native geometry and topology
+remain with STEP/glTF/JSCAD readers, outside Circuit JSON.
 
-`renderToJscadModel` collects each outline's native profile and cap placement.
-Parent transforms compose into its complete matrix. Authors do not assemble a
-separate named-edge map. The corresponding
-[jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504)
-model constructor is a convenience over that same component. STEP and glTF
-readers remain follow-up adapters.
+![Resolved dimension lines on a rectangular tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
 
-The tube names the outer and inner extrusion outlines separately. With a
-40mm width and 3mm walls, `outer_top` spans 40mm and `inner_top` spans the 34mm
-bore. Both are complete closed end contours. Horizontal/vertical edge dimensions
-use all of a native path's points; they do not reduce curves to an endpoint chord. The initial
-aligned mode supports straight open edges and rejects unsupported curves.
+![Bore width and outside width](tests/__snapshots__/view-extent-dimensions.snap.svg)
 
-See [the dimension contract and model-reader example](docs/dimensions.md).
-The proposed TSX intent is defined in [props #953](https://github.com/tscircuit/props/pull/953)
-and the opaque association in [Circuit JSON #922](https://github.com/tscircuit/circuit-json/pull/922).
-
-![Overall dimensions of the rendered tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
-
-![Rounded tube outer and bore dimensions](tests/__snapshots__/view-extent-dimensions.snap.svg)
-
-The native Fiber naming and collection API is proposed in
-[jscad-fiber #142](https://github.com/tscircuit/jscad-fiber/pull/142).
+This proposal consumes the schema preview from
+[Circuit JSON #922](https://github.com/tscircuit/circuit-json/pull/922) and native
+JSCAD drawing fixtures from
+[jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504).
+[Props #953](https://github.com/tscircuit/props/pull/953) defines the higher-level
+TSX authoring intent; eventual core support must resolve it into paper lines.

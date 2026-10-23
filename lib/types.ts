@@ -1,6 +1,5 @@
 import type {
-  DrawingDimension,
-  DrawingDimensionInput,
+  DrawingDimensionLineInput,
   DrawingPage,
   DrawingPartView,
   DrawingPageTitleBlock,
@@ -12,7 +11,7 @@ export interface CircuitElementLike {
   [key: string]: unknown
 }
 export type DrawingDocument = readonly (
-  | DrawingDimensionInput
+  | DrawingDimensionLineInput
   | DrawingPage
   | DrawingPageTitleBlock
   | DrawingPartView
@@ -35,22 +34,26 @@ export interface ResolvedModelEdge {
   closed: boolean
 }
 
+export interface NamedModelEdge extends ResolvedModelEdge {
+  name: string
+}
+
 export interface DrawingOptions {
   /** Select one configured page; omit to render all pages in document order. */
   drawingPageId?: string
   pixelsPerMm?: number
   supersampling?: number
   maxRasterPixels?: number
-  /** Read a named feature from the dimension's owning model, applying the same
-   * instance placement as resolveScene. Samples are CAD world mm (+Z up).
-   * Called only for edge dimensions; unknown/ambiguous names must throw.
-   * Do not replace curved or closed geometry with its first/last points.
+  /** Show small gray feature names. Disabled by default; does not affect lines. */
+  showEdgeNames?: boolean
+  /** Enumerate native named features only when showEdgeNames is enabled.
+   * Samples are CAD world mm (+Z up), using the same placement as resolveScene.
+   * This is an optional labeling adapter, never a dimension-measurement input.
    */
-  resolveModelEdge?: (
-    dimension: DrawingDimension,
+  resolveModelEdges?: (
     partView: DrawingPartView,
     circuitJson: DrawingDocument,
-  ) => ResolvedModelEdge | Promise<ResolvedModelEdge>
+  ) => readonly NamedModelEdge[] | Promise<readonly NamedModelEdge[]>
   /** Resolve the geometry selected by this part view, in glTF +Y-up mm.
    * Geometry loading/caching is owned by the caller, outside Circuit JSON drawing configuration.
    */
