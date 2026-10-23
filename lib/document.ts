@@ -6,6 +6,7 @@ import {
   type DrawingPage,
   type DrawingPartView,
 } from "circuit-json"
+import { parseDrawingDimensionLines } from "./dimension-document"
 import type { DrawingDocument } from "./types"
 
 export function parseDrawingDocument(
@@ -47,6 +48,10 @@ export function parseDrawingDocument(
         )
       viewIds.add(view.drawing_part_view_id)
       views.push(view)
+    } else if (record.type === "drawing_dimension") {
+      throw new Error(
+        "Unsupported drawing_dimension; emit resolved drawing_dimension_line records",
+      )
     } else if (
       ["drawing", "drawing_view", "drawing_artifact"].includes(record.type)
     ) {
@@ -82,7 +87,9 @@ export function parseDrawingDocument(
   }
   if (drawingPageId && !pageIds.has(drawingPageId))
     throw new Error(`Drawing page not found: ${drawingPageId}`)
+  const dimensionLines = parseDrawingDimensionLines(input, views)
   return {
+    dimensionLines,
     pages: drawingPageId
       ? pages.filter((p) => p.drawing_page_id === drawingPageId)
       : pages,

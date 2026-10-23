@@ -12,7 +12,7 @@ hidden edges and hatched section cuts.
 URLs, embedded images, or generated output elements.
 
 ```ts
-import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing"
+import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing";
 
 const circuitJson = [
   {
@@ -44,16 +44,16 @@ const circuitJson = [
     height: 90,
     section: { axis: "x", offset: 5, keep_side: "less", hatch_spacing: 1 },
   },
-] as const
+] as const;
 
 const svg = await convertCircuitJsonToDrawingSvg(circuitJson, {
   resolveScene: async (partView, elements) => {
     // Use your circuit-to-glTF pipeline to resolve the geometry selected by
     // partView.source_group_id / source_component_ids from elements.
-    return getSelectedPartScene(partView, elements)
+    return getSelectedPartScene(partView, elements);
   },
-})
-await Bun.write("drawing.svg", svg)
+});
+await Bun.write("drawing.svg", svg);
 ```
 
 `resolveScene` is called for each part view and returns a PoppyGL `GLTFScene` in
@@ -66,11 +66,13 @@ selectors must be resolved to source IDs by core; core emission is follow-up wor
 ## Multiple pages
 
 ```ts
-import { convertCircuitJsonToDrawingPages } from "@tscircuit/circuit-json-to-drawing"
+import { convertCircuitJsonToDrawingPages } from "@tscircuit/circuit-json-to-drawing";
 
-const pages = await convertCircuitJsonToDrawingPages(circuitJson, { resolveScene })
+const pages = await convertCircuitJsonToDrawingPages(circuitJson, {
+  resolveScene,
+});
 for (const page of pages) {
-  await Bun.write(`${page.drawingPageId}.svg`, page.svg)
+  await Bun.write(`${page.drawingPageId}.svg`, page.svg);
 }
 ```
 
@@ -106,13 +108,15 @@ for the title block.
 
 ## Options
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `drawingPageId` | all pages | Select a configured page |
-| `pixelsPerMm` | 4 | Positive finite view raster resolution; does not change physical scale |
-| `supersampling` | 2 | Positive integer antialiasing factor |
-| `maxRasterPixels` | 16,000,000 | Supersampled pixel limit per view, checked before scene resolution |
-| `resolveScene` | required to render | Resolve configured part geometry into a PoppyGL scene |
+| Option             | Default                      | Meaning                                                                                                   |
+| ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `drawingPageId`    | all pages                    | Select a configured page                                                                                  |
+| `pixelsPerMm`      | 4                            | Positive finite view raster resolution; does not change physical scale                                    |
+| `supersampling`    | 2                            | Positive integer antialiasing factor                                                                      |
+| `maxRasterPixels`  | 16,000,000                   | Supersampled pixel limit per view, checked before scene resolution                                        |
+| `resolveScene`     | required to render           | Resolve configured part geometry into a PoppyGL scene                                                     |
+| `showEdgeNames` | `false` | Show small gray native feature names; dimension lines are unaffected |
+| `resolveModelEdges` | optional | Enumerate named model features for labels when `showEdgeNames` is enabled |
 
 ## Install and development
 
@@ -131,10 +135,10 @@ check workflows. Public imports have no native rasterizer dependency; visual tes
 rasterization is dev-only. Preview dependency pins are temporary until upstream
 schema and packaging PRs are released.
 
-Seven test files contain one test and one visual SVG snapshot each. They cover
+Test files contain one test and one visual SVG snapshot each. They cover
 caller-supplied GLB geometry without drawing image fields, independent part
 selections, multiple pages, six axis directions, hidden edges, section planes,
-physical scale/clipping and configuration validation.
+physical scale/clipping, dimensions and configuration validation.
 
 Schema: https://github.com/tscircuit/circuit-json/pull/918
 
@@ -166,7 +170,7 @@ bun add -D https://jscdn.tscircuit.com/@tscircuit/circuit-json-to-drawing/0.0.2.
 ```
 
 ```ts
-import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing"
+import { convertCircuitJsonToDrawingSvg } from "@tscircuit/circuit-json-to-drawing";
 ```
 
 Releases publish the source-only package to GitHub Packages; jscdn serves the
@@ -174,3 +178,54 @@ versioned tarballs without requiring consumer credentials. The release workflow
 runs tests and typechecking before publishing, and serializes releases to avoid
 version collisions. Versions are bumped explicitly in package.json; the workflow
 does not write repository contents or create version commits. No build or native runtime dependency is required.
+
+## Resolved dimension lines
+
+`drawing_dimension_line` contains the final paper-space endpoints and preformatted
+text to render. The producer measures native geometry and chooses placement before
+exporting Circuit JSON. The exporter draws exactly those positions and text:
+
+```ts
+{
+  type: "drawing_dimension_line",
+  drawing_dimension_line_id: "outside_width",
+  drawing_part_view_id: "end",
+  start: { x: -105, y: 55 },
+  end: { x: -65, y: 55 },
+  text: "40.0",
+  edge_ref_start: { x: -105, y: 45 },
+  edge_ref_end: { x: -65, y: 45 },
+  edge_ref_name: "outer_top",
+}
+```
+
+All line and witness coordinates are paper mm from page center, +X right and +Y
+up. Each witness is optional independently. There are no orientation, offset,
+precision, model targets or inferred-view flags on this record. Arrow direction
+and readable text rotation follow the supplied line. Changing a part view does
+not move or remeasure already resolved annotations.
+
+Use `showEdgeNames: true` for small gray feature-name labels. Without a model
+reader, labels use each line's `edge_ref_name` near its witness midpoint (or its
+line midpoint). Optional `resolveModelEdges(view, input)` enumerates all named
+native features, even without dimension records. It returns `{name, points,
+closed}` runtime samples in CAD world mm, +Z up. The exporter projects these
+labels with the actual raster camera and stacks coincident names. The callback
+is never called when labels are disabled.
+
+[Resolved-line coordinates, optional witnesses and native readers](docs/dimensions.md)
+explains the producer/exporter boundary. The real JSCAD tube examples calculate
+measurements upstream: 40 mm outside width and 34 mm bore width, using closed
+extrusion outlines named `outer_top` and `inner_top`. Native geometry and topology
+remain with STEP/glTF/JSCAD readers, outside Circuit JSON.
+
+![Resolved dimension lines on a rectangular tube](tests/__snapshots__/named-edge-dimensions.snap.svg)
+
+![Bore width and outside width](tests/__snapshots__/view-extent-dimensions.snap.svg)
+
+This proposal consumes the schema preview from
+[Circuit JSON #922](https://github.com/tscircuit/circuit-json/pull/922) and native
+JSCAD drawing fixtures from
+[jscad-electronics #504](https://github.com/tscircuit/jscad-electronics/pull/504).
+[Props #953](https://github.com/tscircuit/props/pull/953) defines the higher-level
+TSX authoring intent; eventual core support must resolve it into paper lines.
