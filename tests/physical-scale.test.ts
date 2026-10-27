@@ -27,20 +27,24 @@ test("physical scale changes projected size and clips rather than refits oversiz
     { resolveScene: () => cadScene() },
   )
   const pngs = viewImages(pages[0]!.svg)
-  const span = (image: (typeof pngs)[number]) => {
-    let min = Infinity,
-      max = -Infinity
-    for (let y = 0; y < image.height; y++)
-      for (let x = 0; x < image.width; x++)
-        if (image.data[(y * image.width + x) * 4]! < 128) {
-          min = Math.min(min, x)
-          max = Math.max(max, x)
-        }
-    return max - min + 1
+  const centerlineSpan = (image: (typeof pngs)[number]) => {
+    const runs: number[][] = []
+    const y = Math.floor(image.height / 2)
+    for (let x = 0; x < image.width; x++) {
+      if (image.data[(y * image.width + x) * 4]! >= 128) continue
+      const previous = runs.at(-1)
+      if (previous && previous.at(-1) === x - 1) previous.push(x)
+      else runs.push([x])
+    }
+    if (!runs.length) return -Infinity
+    expect(runs).toHaveLength(2)
+    const center = (run: number[]) => (run[0]! + run.at(-1)!) / 2
+    return center(runs[1]!) - center(runs[0]!)
   }
-  expect(span(pngs[0]!)).toBeCloseTo(40, 0)
-  expect(span(pngs[1]!)).toBeCloseTo(80, 0)
-  expect(span(pngs[2]!)).toBe(-Infinity)
+  // Scale locates edge centerlines; visible stroke thickness extends past them.
+  expect(centerlineSpan(pngs[0]!)).toBeCloseTo(40, 0)
+  expect(centerlineSpan(pngs[1]!)).toBeCloseTo(80, 0)
+  expect(centerlineSpan(pngs[2]!)).toBe(-Infinity)
   expect(pages[0]!.svg).toContain('width="210mm" height="110mm"')
   await expect(pages[0]!.svg).toMatchSvgSnapshot(import.meta.path)
 })

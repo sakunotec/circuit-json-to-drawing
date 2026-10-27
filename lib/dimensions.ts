@@ -1,5 +1,6 @@
 import type { DrawingDimensionLine, DrawingPage } from "circuit-json"
 import { escapeXml } from "./svg"
+import { drawingStyle } from "./drawing-style"
 
 type Point = DrawingDimensionLine["start"]
 
@@ -103,11 +104,15 @@ export function renderDrawingDimensionLine(
   const line = (from: Point, to: Point, role: string) => {
     const p = svgPoint(from),
       q = svgPoint(to)
-    return `<path data-dimension-role="${role}" d="M ${p.x} ${p.y} L ${q.x} ${q.y}"/>`
+    const witnessStyle =
+      role === "extension"
+        ? ` stroke="${drawingStyle.witnessColor}" stroke-width="${drawingStyle.witnessWidth}"`
+        : ""
+    return `<path data-dimension-role="${role}" d="M ${p.x} ${p.y} L ${q.x} ${q.y}"${witnessStyle}/>`
   }
   const arrow = (tip: Point, direction: number) => {
     const points = arrowPoints(tip, direction).map(svgPoint)
-    return `<polygon points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="black" stroke="none"/>`
+    return `<polygon points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="${drawingStyle.dimensionColor}" stroke="none"/>`
   }
   const drawingLines = [
     ...extensions.map((extension) =>
@@ -122,7 +127,7 @@ export function renderDrawingDimensionLine(
     )
   const angle = (-Math.atan2(textTangent.y, textTangent.x) * 180) / Math.PI
   const text = svgPoint(labelCenter)
-  const svg = `<g data-drawing-dimension-line-id="${escapeXml(dimension.drawing_dimension_line_id)}" fill="none" stroke="black" stroke-width="0.25"><title>${escapeXml(dimension.name ?? dimension.text)}</title>${drawingLines.join("")}${arrow(start, outside ? -1 : 1)}${arrow(end, outside ? 1 : -1)}<g transform="translate(${text.x} ${text.y}) rotate(${angle})"><rect x="${-textWidth / 2 - 0.6}" y="-1.5" width="${textWidth + 1.2}" height="3.5" fill="white" stroke="none"/><text xml:space="preserve" text-anchor="middle" dominant-baseline="middle" font-size="3" fill="black" stroke="none">${escapeXml(dimension.text)}</text></g></g>`
+  const svg = `<g data-drawing-dimension-line-id="${escapeXml(dimension.drawing_dimension_line_id)}" fill="none" stroke="${drawingStyle.dimensionColor}" stroke-width="${drawingStyle.dimensionWidth}"><title>${escapeXml(dimension.name ?? dimension.text)}</title>${drawingLines.join("")}${arrow(start, outside ? -1 : 1)}${arrow(end, outside ? 1 : -1)}<g transform="translate(${text.x} ${text.y}) rotate(${angle})"><rect x="${-textWidth / 2 - 0.6}" y="-1.5" width="${textWidth + 1.2}" height="3.5" fill="white" stroke="none"/><text xml:space="preserve" text-anchor="middle" dominant-baseline="middle" font-size="3" fill="${drawingStyle.textColor}" stroke="none">${escapeXml(dimension.text)}</text></g></g>`
   const labelBounds = {
     left: Math.min(...labelCorners.map((point) => point.x)),
     right: Math.max(...labelCorners.map((point) => point.x)),

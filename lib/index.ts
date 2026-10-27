@@ -5,6 +5,7 @@ import {
   createOutlineSection,
 } from "poppygl"
 import { renderDrawingDimensionLine } from "./dimensions"
+import { drawingStyle } from "./drawing-style"
 import { renderEdgeNames } from "./edge-names"
 import { parseDrawingDocument } from "./document"
 import { getViewOrientation, sectionToGltf } from "./coordinates"
@@ -112,6 +113,9 @@ export async function convertCircuitJsonToDrawingPages(
         width,
         height,
         supersampling,
+        // PoppyGL takes output pixels and applies supersampling internally.
+        // Keep visible part edges heavier than vector annotations at every DPI.
+        edgeWidth: drawingStyle.outlineWidth * pixelsPerMm,
         camPos: eye,
         lookAt: center,
         up,
