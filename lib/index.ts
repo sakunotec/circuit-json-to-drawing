@@ -1,5 +1,6 @@
 import {
   computeWorldAABB,
+  buildCamera,
   renderDrawCalls,
   encodePNG,
   createOutlineSection,
@@ -27,6 +28,19 @@ export type {
 } from "./types"
 export { cadToGltf, sectionToGltf, getViewOrientation } from "./coordinates"
 
+function getRasterSize(
+  view: { width: number; height: number },
+  pixelsPerMm: number,
+) {
+  const width = Math.max(1, Math.ceil(view.width * pixelsPerMm)),
+    height = Math.max(1, Math.ceil(view.height * pixelsPerMm))
+  const imageWidth = width / pixelsPerMm,
+    imageHeight = height / pixelsPerMm
+  if (![imageWidth, imageHeight].every(Number.isFinite))
+    throw new Error("Drawing raster requires finite physical dimensions")
+  return { width, height, imageWidth, imageHeight }
+}
+
 /** Render configured pages. Rendered files are exporter output, not Circuit JSON records. */
 export async function convertCircuitJsonToDrawingPages(
   input: DrawingDocument,
@@ -49,8 +63,7 @@ export async function convertCircuitJsonToDrawingPages(
   for (const view of views.filter((v) =>
     pages.some((s) => s.drawing_page_id === v.drawing_page_id),
   )) {
-    const width = Math.max(1, Math.round(view.width * pixelsPerMm)),
-      height = Math.max(1, Math.round(view.height * pixelsPerMm))
+    const { width, height } = getRasterSize(view, pixelsPerMm)
     if (
       width * height * supersampling ** 2 > maxRasterPixels ||
       !Number.isSafeInteger(width * height * supersampling ** 2)
@@ -92,8 +105,10 @@ export async function convertCircuitJsonToDrawingPages(
       const eye = center.map(
         (n, i) => n + (vector[i]! / length) * distance,
       ) as [number, number, number]
-      const width = Math.max(1, Math.round(view.width * pixelsPerMm)),
-        height = Math.max(1, Math.round(view.height * pixelsPerMm))
+      const { width, height, imageWidth, imageHeight } = getRasterSize(
+        view,
+        pixelsPerMm,
+      )
       const renderedGeometry = view.section
         ? createOutlineSection(scene.drawCalls, sectionToGltf(view.section))
             .drawCalls
@@ -107,6 +122,30 @@ export async function convertCircuitJsonToDrawingPages(
         throw new Error(
           `Part view ${view.drawing_part_view_id} has no retained geometry`,
         )
+      // Whole pixels can enlarge the raster beyond the paper viewport. Keep
+      // their physical size uniform, then clip the surplus instead of stretching
+      // the image back to a different aspect ratio.
+      let orthographicHeight =
+        view.scale == null ? null : imageHeight / view.scale
+      if (
+        view.scale == null &&
+        (imageWidth !== view.width || imageHeight !== view.height)
+      ) {
+        // Auto-fit to the requested paper area, not its padded raster area.
+        const fitCamera = buildCamera(
+          renderedGeometry,
+          view.width,
+          view.height,
+          45,
+          eye,
+          center,
+          up,
+          null,
+          "orthographic",
+        )
+        orthographicHeight =
+          (2 / fitCamera.proj[5]!) * (imageHeight / view.height)
+      }
       const { bitmap, camera } = renderDrawCalls(renderedGeometry, {
         renderStyle: "outline",
         projection: "orthographic",
@@ -120,8 +159,7 @@ export async function convertCircuitJsonToDrawingPages(
         lookAt: center,
         up,
         showHiddenEdges: view.show_hidden_edges ?? false,
-        orthographicHeight:
-          view.scale == null ? null : view.height / view.scale,
+        orthographicHeight,
       })
       const png = await encodePNG(bitmap),
         pngUrl = `data:image/png;base64,${toBase64(png)}`
@@ -138,12 +176,12 @@ export async function convertCircuitJsonToDrawingPages(
               options.resolveModelEdges
                 ? await options.resolveModelEdges(view, input)
                 : [],
-              view,
+              { ...view, width: imageWidth, height: imageHeight },
               page,
               camera,
             )
           : "")
-      rendered.push({ view, pngUrl, dimensionSvg })
+      rendered.push({ view, pngUrl, dimensionSvg, imageWidth, imageHeight })
     }
     output.push({
       drawingPageId: page.drawing_page_id,

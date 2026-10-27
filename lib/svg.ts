@@ -22,16 +22,24 @@ export function toBase64(bytes: Uint8Array): string {
 
 export function pageToSvg(
   page: DrawingPage,
-  views: { view: DrawingPartView; pngUrl: string; dimensionSvg?: string }[],
+  views: {
+    view: DrawingPartView
+    pngUrl: string
+    dimensionSvg?: string
+    imageWidth: number
+    imageHeight: number
+  }[],
   titleBlock?: DrawingPageTitleBlock,
 ) {
   const title = escapeXml(
     page.display_name ?? page.name ?? page.drawing_page_id,
   )
   const images = views
-    .map(({ view, pngUrl }, index) => {
+    .map(({ view, pngUrl, imageWidth, imageHeight }, index) => {
       const x = page.width / 2 + view.center.x - view.width / 2
       const y = page.height / 2 - view.center.y - view.height / 2
+      const imageX = page.width / 2 + view.center.x - imageWidth / 2
+      const imageY = page.height / 2 - view.center.y - imageHeight / 2
       const name = escapeXml(
         view.display_name ?? view.name ?? view.drawing_part_view_id,
       )
@@ -41,7 +49,7 @@ export function pageToSvg(
           : view.scale < 1
             ? `1:${Number((1 / view.scale).toPrecision(6))}`
             : `${view.scale}:1`
-      return `<g data-drawing-part-view-id="${escapeXml(view.drawing_part_view_id)}"><title>${name}</title><clipPath id="viewport-${index}"><rect x="${x}" y="${y}" width="${view.width}" height="${view.height}"/></clipPath><image x="${x}" y="${y}" width="${view.width}" height="${view.height}" preserveAspectRatio="none" clip-path="url(#viewport-${index})" href="${pngUrl}"/><text x="${x + view.width / 2}" y="${y + view.height + 3.5}" text-anchor="middle" font-size="2.8">${name} · ${scale}</text></g>`
+      return `<g data-drawing-part-view-id="${escapeXml(view.drawing_part_view_id)}"><title>${name}</title><clipPath id="viewport-${index}"><rect x="${x}" y="${y}" width="${view.width}" height="${view.height}"/></clipPath><image x="${imageX}" y="${imageY}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="none" clip-path="url(#viewport-${index})" href="${pngUrl}"/><text x="${x + view.width / 2}" y="${y + view.height + 3.5}" text-anchor="middle" font-size="2.8">${name} · ${scale}</text></g>`
     })
     .join("")
   const dimensions = views
